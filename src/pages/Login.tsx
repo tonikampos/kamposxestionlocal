@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, Navigate } from 'react-router-dom';
+import { useNavigate, Navigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const Login = () => {
@@ -96,12 +96,12 @@ const Login = () => {
         <div className="mt-6">
           <p className="text-sm text-gray-600 text-center">
             ¿Non tes unha conta de profesor?{' '}
-            <a 
-              href="/profesores/novo" 
+            <Link 
+              to="/profesores/novo" 
               className="text-blue-600 hover:text-blue-800"
             >
               Rexístrate como profesor
-            </a>
+            </Link>
           </p>
           <p className="text-xs text-gray-500 mt-2 text-center">
             *Esta aplicación só está dispoñible para profesores previamente rexistrados
