@@ -37,6 +37,7 @@ const MatriculasAsignatura: React.FC = () => {
     const cargarDatos = async () => {
       setLoading(true);
       try {
+        console.log('MatriculasAsignatura: Cargando asignatura con ID:', id);
         // Cargar asignatura
         const asignaturaData = await dataManager.getAsignaturaById(id);
         if (!asignaturaData) {
@@ -44,6 +45,8 @@ const MatriculasAsignatura: React.FC = () => {
           navigate('/asignaturas');
           return;
         }
+
+        console.log('MatriculasAsignatura: Asignatura cargada:', asignaturaData);
 
         // Verificar que la asignatura pertenece al profesor autenticado
         if (asignaturaData.profesorId !== currentUser.id) {
@@ -55,27 +58,40 @@ const MatriculasAsignatura: React.FC = () => {
         setAsignatura(asignaturaData);
 
         // Cargar alumnos matriculados y sus matrículas
+        console.log('MatriculasAsignatura: Obteniendo matrículas para la asignatura:', id);
         const matriculas = await dataManager.getMatriculasByAsignatura(id);
+        console.log('MatriculasAsignatura: Matrículas obtenidas:', matriculas);
+        
         const alumnosIds = matriculas.map(m => m.alumnoId);
+        console.log('MatriculasAsignatura: IDs de alumnos matriculados:', alumnosIds);
         
         // Cargar detalles de los alumnos matriculados
         const alumnosMatr: Alumno[] = [];
         for (const alumnoId of alumnosIds) {
+          console.log('MatriculasAsignatura: Cargando alumno con ID:', alumnoId);
           const alumno = await dataManager.getAlumnoById(alumnoId);
           if (alumno) {
+            console.log('MatriculasAsignatura: Alumno cargado:', alumno.nome, alumno.apelidos);
             alumnosMatr.push(alumno);
+          } else {
+            console.warn('MatriculasAsignatura: No se encontró el alumno con ID:', alumnoId);
           }
         }
+        
+        console.log('MatriculasAsignatura: Total de alumnos matriculados cargados:', alumnosMatr.length);
         setAlumnosMatriculados(alumnosMatr);
 
         // Cargar todos los alumnos del profesor
+        console.log('MatriculasAsignatura: Cargando todos los alumnos del profesor:', currentUser.id);
         const todosAlumnos = await dataManager.getAlumnosByProfesor(currentUser.id);
+        console.log('MatriculasAsignatura: Total de alumnos del profesor:', todosAlumnos.length);
         
         // Filtrar los que no están matriculados
         const disponibles = todosAlumnos.filter(
           alumno => !alumnosIds.includes(alumno.id)
         );
         
+        console.log('MatriculasAsignatura: Alumnos disponibles para matricular:', disponibles.length);
         setAlumnosDisponibles(disponibles);
         setSearchResults(disponibles); // Inicialmente los resultados son todos los disponibles
       } catch (error) {
@@ -110,13 +126,22 @@ const MatriculasAsignatura: React.FC = () => {
     try {
       if (!id) return;
 
+      console.log('MatriculasAsignatura: Matriculando alumno con ID:', alumnoId, 'en asignatura con ID:', id);
       await dataManager.matricularAlumno(alumnoId, id);
+      console.log('MatriculasAsignatura: Alumno matriculado exitosamente');
       
       // Actualizar listas
       const alumnoMatriculado = alumnosDisponibles.find(a => a.id === alumnoId);
       if (alumnoMatriculado) {
+        console.log('MatriculasAsignatura: Actualizando listas con el alumno matriculado:', alumnoMatriculado.nome, alumnoMatriculado.apelidos);
         setAlumnosMatriculados(prev => [...prev, alumnoMatriculado]);
         setAlumnosDisponibles(prev => prev.filter(a => a.id !== alumnoId));
+        setSearchResults(prev => prev.filter(a => a.id !== alumnoId));
+        
+        // Mostrar mensaje de éxito
+        alert(`Alumno ${alumnoMatriculado.nome} ${alumnoMatriculado.apelidos} matriculado con éxito.`);
+      } else {
+        console.warn('MatriculasAsignatura: No se encontró el alumno en la lista de disponibles');
       }
     } catch (error) {
       console.error('Error al matricular alumno:', error);

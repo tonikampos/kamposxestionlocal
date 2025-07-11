@@ -293,15 +293,20 @@ class RealtimeDatabaseManager {
   // Obtener alumno por ID
   async getAlumnoById(id: string): Promise<Alumno | undefined> {
     try {
+      console.log('realtimeDatabaseManager: getAlumnoById - Buscando alumno con ID:', id);
       const alumnoRef = ref(db, `alumnos/${id}`);
       const snapshot = await get(alumnoRef);
       
       if (!snapshot.exists()) {
+        console.log('realtimeDatabaseManager: No se encontró ningún alumno con ID:', id);
         return undefined;
       }
       
+      const alumnoData = snapshot.val();
+      console.log('realtimeDatabaseManager: Alumno encontrado:', alumnoData.nome, alumnoData.apelidos);
+      
       return {
-        ...snapshot.val(),
+        ...alumnoData,
         id: id
       };
     } catch (error) {
@@ -484,21 +489,27 @@ class RealtimeDatabaseManager {
   // Obtener matrículas por asignatura
   async getMatriculasByAsignatura(asignaturaId: string): Promise<Matricula[]> {
     try {
+      console.log('realtimeDatabaseManager: getMatriculasByAsignatura - Buscando matrículas para asignatura:', asignaturaId);
       const matriculasRef = ref(db, "matriculas");
       const matriculasPorAsignaturaQuery = query(matriculasRef, orderByChild("asignaturaId"), equalTo(asignaturaId));
       const snapshot = await get(matriculasPorAsignaturaQuery);
       
       if (!snapshot.exists()) {
+        console.log('realtimeDatabaseManager: No se encontraron matrículas para la asignatura:', asignaturaId);
         return [];
       }
       
       const matriculasData = snapshot.val();
+      console.log('realtimeDatabaseManager: Datos de matrículas encontrados:', matriculasData);
       
       // Convertir objeto a array
-      return Object.keys(matriculasData).map(key => ({
+      const matriculas = Object.keys(matriculasData).map(key => ({
         ...matriculasData[key],
         id: key
       }));
+      
+      console.log('realtimeDatabaseManager: Matrículas procesadas:', matriculas.length, matriculas);
+      return matriculas;
     } catch (error) {
       console.error("Error al obtener matrículas por asignatura:", error);
       return [];
