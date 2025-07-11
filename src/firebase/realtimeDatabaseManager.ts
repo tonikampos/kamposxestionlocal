@@ -139,26 +139,34 @@ class RealtimeDatabaseManager {
   // Obtener alumnos de un profesor
   async getAlumnosByProfesor(profesorId: string): Promise<Alumno[]> {
     try {
-      console.log("Obteniendo alumnos para el profesor:", profesorId);
+      console.log("RealtimeDBManager: Obteniendo alumnos para el profesor:", profesorId);
+      
+      if (!profesorId) {
+        console.error("RealtimeDBManager: Se proporcionó un profesorId vacío");
+        return [];
+      }
+      
+      // Primero obtenemos todos los alumnos y luego filtramos por profesorId
       const alumnosRef = ref(db, "alumnos");
-      const alumnosPorProfesorQuery = query(alumnosRef, orderByChild("profesorId"), equalTo(profesorId));
-      const snapshot = await get(alumnosPorProfesorQuery);
+      const snapshot = await get(alumnosRef);
       
       if (!snapshot.exists()) {
-        console.log("No se encontraron alumnos para este profesor");
+        console.log("RealtimeDBManager: No se encontraron alumnos en la base de datos");
         return [];
       }
       
       const alumnosData = snapshot.val();
-      console.log("Datos de alumnos obtenidos:", alumnosData);
+      console.log("RealtimeDBManager: Todos los datos de alumnos obtenidos", alumnosData);
       
-      // Convertir objeto a array
-      const alumnosArray = Object.keys(alumnosData).map(key => ({
-        ...alumnosData[key],
-        id: key
-      }));
+      // Convertir objeto a array y filtrar por profesorId
+      const alumnosArray = Object.keys(alumnosData)
+        .map(key => ({
+          ...alumnosData[key],
+          id: key
+        }))
+        .filter(alumno => alumno.profesorId === profesorId);
       
-      console.log("Array de alumnos procesado:", alumnosArray);
+      console.log(`RealtimeDBManager: Se encontraron ${alumnosArray.length} alumnos para el profesor ${profesorId}:`, alumnosArray);
       return alumnosArray;
     } catch (error) {
       console.error("Error al obtener alumnos:", error);
@@ -307,26 +315,34 @@ class RealtimeDatabaseManager {
   // Obtener asignaturas de un profesor
   async getAsignaturasByProfesor(profesorId: string): Promise<Asignatura[]> {
     try {
-      console.log("Obteniendo asignaturas para el profesor:", profesorId);
+      console.log("RealtimeDBManager: Obteniendo asignaturas para el profesor:", profesorId);
+      
+      if (!profesorId) {
+        console.error("RealtimeDBManager: Se proporcionó un profesorId vacío");
+        return [];
+      }
+      
+      // Primero obtenemos todas las asignaturas y luego filtramos por profesorId
       const asignaturasRef = ref(db, "asignaturas");
-      const asignaturasPorProfesorQuery = query(asignaturasRef, orderByChild("profesorId"), equalTo(profesorId));
-      const snapshot = await get(asignaturasPorProfesorQuery);
+      const snapshot = await get(asignaturasRef);
       
       if (!snapshot.exists()) {
-        console.log("No se encontraron asignaturas para este profesor");
+        console.log("RealtimeDBManager: No se encontraron asignaturas en la base de datos");
         return [];
       }
       
       const asignaturasData = snapshot.val();
-      console.log("Datos de asignaturas obtenidos:", asignaturasData);
+      console.log("RealtimeDBManager: Todos los datos de asignaturas obtenidos", asignaturasData);
       
-      // Convertir objeto a array
-      const asignaturasArray = Object.keys(asignaturasData).map(key => ({
-        ...asignaturasData[key],
-        id: key
-      }));
+      // Convertir objeto a array y filtrar por profesorId
+      const asignaturasArray = Object.keys(asignaturasData)
+        .map(key => ({
+          ...asignaturasData[key],
+          id: key
+        }))
+        .filter(asignatura => asignatura.profesorId === profesorId);
       
-      console.log("Array de asignaturas procesado:", asignaturasArray);
+      console.log(`RealtimeDBManager: Se encontraron ${asignaturasArray.length} asignaturas para el profesor ${profesorId}:`, asignaturasArray);
       return asignaturasArray;
     } catch (error) {
       console.error("Error al obtener asignaturas:", error);

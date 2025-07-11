@@ -33,18 +33,31 @@ const AlumnosList: React.FC<AlumnosListProps> = ({ onEditAlumno }) => {
     setIsLoading(true);
     try {
       if (currentUser) {
+        console.log('AlumnosList: Cargando alumnos para profesor', currentUser.id);
+        
         // Usamos dataManager que trabaja con Firebase
         const alumnosFromStorage = await dataManager.getAlumnosByProfesor(currentUser.id);
-        setAlumnos(alumnosFromStorage);
+        console.log('AlumnosList: Alumnos cargados', alumnosFromStorage);
+        
+        // Siempre establecer el estado, incluso si es un array vacío
+        setAlumnos(alumnosFromStorage || []);
         
         // Verificar qué alumnos están matriculados en alguna asignatura
         const matriculados: Record<string, boolean> = {};
-        for (const alumno of alumnosFromStorage) {
-          const matriculasAlumno = await dataManager.getMatriculasByAlumno(alumno.id);
-          matriculados[alumno.id] = matriculasAlumno.length > 0;
+        
+        if (alumnosFromStorage && alumnosFromStorage.length > 0) {
+          for (const alumno of alumnosFromStorage) {
+            console.log('AlumnosList: Verificando matrículas para alumno', alumno.id);
+            const matriculasAlumno = await dataManager.getMatriculasByAlumno(alumno.id);
+            matriculados[alumno.id] = matriculasAlumno.length > 0;
+          }
+        } else {
+          console.log('AlumnosList: No hay alumnos para cargar matrículas');
         }
+        
         setMatriculadosMap(matriculados);
       } else {
+        console.log('AlumnosList: No hay usuario actual, no se cargan alumnos');
         setAlumnos([]);
         setMatriculadosMap({});
       }

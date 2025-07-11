@@ -1,3 +1,9 @@
+/**
+ * Este archivo solo contiene definiciones de tipos para la aplicación
+ * La implementación ahora usa Firebase Realtime Database 
+ * a través del realtimeDatabaseManager.ts
+ */
+
 // Definir tipos para nuestra aplicación
 export interface Profesor {
   id: string;
