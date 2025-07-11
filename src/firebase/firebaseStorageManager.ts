@@ -1,6 +1,10 @@
-import { collection, doc, addDoc, setDoc, getDocs, query, where, deleteDoc, getDoc, updateDoc, QueryConstraint } from "firebase/firestore";
+import { collection, doc, addDoc, setDoc, getDocs, query, where, deleteDoc, getDoc, updateDoc, QueryConstraint, getFirestore } from "firebase/firestore";
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "firebase/auth";
-import { db, auth } from "../firebase/config";
+import { auth } from "../firebase/config";
+import app from "../firebase/config";
+
+// Inicializar Firestore (diferente de Realtime Database)
+const firestore = getFirestore(app);
 import type { Alumno, Asignatura, Matricula, NotaAlumno, Profesor } from "../utils/storageManager";
 
 class FirebaseStorageManager {
@@ -24,10 +28,10 @@ class FirebaseStorageManager {
       };
       
       // Eliminar la contraseña antes de almacenar en Firestore (ya está en Auth)
-      delete profesorData.contrasinal;
+      const { contrasinal, ...profesorDataSinPassword } = profesorData;
       
       // Guardar en la colección "profesores"
-      await setDoc(doc(db, "profesores", userCredential.user.uid), profesorData);
+      await setDoc(doc(firestore, "profesores", userCredential.user.uid), profesorDataSinPassword);
       
       return userCredential.user.uid;
     } catch (error) {
@@ -42,7 +46,7 @@ class FirebaseStorageManager {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       
       // Obtener datos del profesor de Firestore
-      const profesorDoc = await getDoc(doc(db, "profesores", userCredential.user.uid));
+      const profesorDoc = await getDoc(doc(firestore, "profesores", userCredential.user.uid));
       
       if (!profesorDoc.exists()) {
         throw new Error("O profesor non existe na base de datos");
@@ -75,7 +79,7 @@ class FirebaseStorageManager {
   // Obtener todos los profesores
   async getProfesores(): Promise<Profesor[]> {
     try {
-      const profesoresRef = collection(db, "profesores");
+      const profesoresRef = collection(firestore, "profesores");
       const snapshot = await getDocs(profesoresRef);
       
       return snapshot.docs.map(doc => {
@@ -94,7 +98,7 @@ class FirebaseStorageManager {
   // Obtener profesor por ID
   async getProfesorById(id: string): Promise<Profesor | undefined> {
     try {
-      const profesorDoc = await getDoc(doc(db, "profesores", id));
+      const profesorDoc = await getDoc(doc(firestore, "profesores", id));
       if (!profesorDoc.exists()) {
         return undefined;
       }
@@ -112,13 +116,12 @@ class FirebaseStorageManager {
   // Actualizar profesor
   async updateProfesor(profesor: Profesor): Promise<void> {
     try {
-      const profesorRef = doc(db, "profesores", profesor.id);
+      const profesorRef = doc(firestore, "profesores", profesor.id);
       
-      // Hacer una copia del objeto para no modificar el original
-      const profesorData = { ...profesor };
-      delete profesorData.id; // Eliminar el ID porque ya está en la referencia del documento
+      // Hacer una copia del objeto sin el ID
+      const { id, ...profesorSinId } = profesor;
       
-      await updateDoc(profesorRef, profesorData);
+      await updateDoc(profesorRef, profesorSinId);
     } catch (error) {
       console.error("Error al actualizar profesor:", error);
       throw error;
@@ -130,7 +133,7 @@ class FirebaseStorageManager {
   // Obtener alumnos de un profesor
   async getAlumnosByProfesor(profesorId: string): Promise<Alumno[]> {
     try {
-      const alumnosRef = collection(db, "alumnos");
+      const alumnosRef = collection(firestore, "alumnos");
       const q = query(alumnosRef, where("profesorId", "==", profesorId));
       const snapshot = await getDocs(q);
       
@@ -156,7 +159,7 @@ class FirebaseStorageManager {
         updatedAt: now
       };
       
-      const docRef = await addDoc(collection(db, "alumnos"), alumnoData);
+      const docRef = await addDoc(collection(firestore, "alumnos"), alumnoData);
       return docRef.id;
     } catch (error) {
       console.error("Error al añadir alumno:", error);
@@ -167,16 +170,16 @@ class FirebaseStorageManager {
   // Actualizar un alumno
   async updateAlumno(alumno: Alumno): Promise<void> {
     try {
-      const alumnoRef = doc(db, "alumnos", alumno.id);
+      const alumnoRef = doc(firestore, "alumnos", alumno.id);
       
-      // Actualizar fecha de modificación
-      const alumnoData = {
-        ...alumno,
+      // Extraer ID y crear objeto con fecha actualizada
+      const { id, ...alumnoSinId } = alumno;
+      const alumnoActualizado = {
+        ...alumnoSinId,
         updatedAt: new Date().toISOString()
       };
-      delete alumnoData.id; // Eliminar el ID porque ya está en la referencia del documento
       
-      await updateDoc(alumnoRef, alumnoData);
+      await updateDoc(alumnoRef, alumnoActualizado);
     } catch (error) {
       console.error("Error al actualizar alumno:", error);
       throw error;
@@ -186,7 +189,7 @@ class FirebaseStorageManager {
   // Eliminar un alumno
   async deleteAlumno(id: string): Promise<void> {
     try {
-      await deleteDoc(doc(db, "alumnos", id));
+      await deleteDoc(doc(firestore, "alumnos", id));
       
       // También podríamos eliminar sus matrículas y notas
       // Esto debería hacerse con una función de Cloud Functions para garantizar atomicidad
@@ -201,7 +204,7 @@ class FirebaseStorageManager {
   // Obtener asignaturas de un profesor
   async getAsignaturasByProfesor(profesorId: string): Promise<Asignatura[]> {
     try {
-      const asignaturasRef = collection(db, "asignaturas");
+      const asignaturasRef = collection(firestore, "asignaturas");
       const q = query(asignaturasRef, where("profesorId", "==", profesorId));
       const snapshot = await getDocs(q);
       
@@ -227,7 +230,7 @@ class FirebaseStorageManager {
         updatedAt: now
       };
       
-      const docRef = await addDoc(collection(db, "asignaturas"), asignaturaData);
+      const docRef = await addDoc(collection(firestore, "asignaturas"), asignaturaData);
       return docRef.id;
     } catch (error) {
       console.error("Error al añadir asignatura:", error);
@@ -241,7 +244,7 @@ class FirebaseStorageManager {
   async matricularAlumno(alumnoId: string, asignaturaId: string): Promise<string> {
     try {
       // Verificar si ya existe la matrícula
-      const matriculasRef = collection(db, "matriculas");
+      const matriculasRef = collection(firestore, "matriculas");
       const q = query(
         matriculasRef, 
         where("alumnoId", "==", alumnoId),
@@ -262,7 +265,7 @@ class FirebaseStorageManager {
         updatedAt: now
       };
       
-      const docRef = await addDoc(collection(db, "matriculas"), matriculaData);
+      const docRef = await addDoc(collection(firestore, "matriculas"), matriculaData);
       return docRef.id;
     } catch (error) {
       console.error("Error al matricular alumno:", error);
@@ -273,7 +276,7 @@ class FirebaseStorageManager {
   // Obtener matrículas por asignatura
   async getMatriculasByAsignatura(asignaturaId: string): Promise<Matricula[]> {
     try {
-      const matriculasRef = collection(db, "matriculas");
+      const matriculasRef = collection(firestore, "matriculas");
       const q = query(matriculasRef, where("asignaturaId", "==", asignaturaId));
       const snapshot = await getDocs(q);
       
@@ -294,7 +297,7 @@ class FirebaseStorageManager {
   // Obtener nota de un alumno en una asignatura
   async getNotaAlumno(alumnoId: string, asignaturaId: string): Promise<NotaAlumno | null> {
     try {
-      const notasRef = collection(db, "notas");
+      const notasRef = collection(firestore, "notas");
       const q = query(
         notasRef, 
         where("alumnoId", "==", alumnoId),
@@ -337,20 +340,20 @@ class FirebaseStorageManager {
             updatedAt: now
           };
           
-          const docRef = await addDoc(collection(db, "notas"), notaData);
+          const docRef = await addDoc(collection(firestore, "notas"), notaData);
           return;
         }
       }
       
       // Actualizar la nota existente
-      const notaRef = doc(db, "notas", nota.id);
-      const notaData = {
-        ...nota,
+      const notaRef = doc(firestore, "notas", nota.id);
+      const { id, ...notaSinId } = nota;
+      const notaActualizada = {
+        ...notaSinId,
         updatedAt: new Date().toISOString()
       };
-      delete notaData.id;
       
-      await updateDoc(notaRef, notaData);
+      await updateDoc(notaRef, notaActualizada);
     } catch (error) {
       console.error("Error al actualizar nota de alumno:", error);
       throw error;
