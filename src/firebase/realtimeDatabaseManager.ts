@@ -299,20 +299,36 @@ class RealtimeDatabaseManager {
       }
       
       console.log('realtimeDatabaseManager: getAlumnoById - Buscando alumno con ID:', id);
+      
+      // Intentar obtener directamente el alumno
       const alumnoRef = ref(db, `alumnos/${id}`);
       const snapshot = await get(alumnoRef);
       
       if (!snapshot.exists()) {
         console.log('realtimeDatabaseManager: No se encontró ningún alumno con ID:', id);
         
-        // Intentar buscar en todas las colecciones para depurar
-        console.log('realtimeDatabaseManager: Intentando obtener todos los alumnos para depurar');
+        // Método alternativo: buscar manualmente el alumno entre todos los alumnos
+        console.log('realtimeDatabaseManager: Buscando manualmente el alumno en todos los registros');
         const todosAlumnosRef = ref(db, 'alumnos');
         const todosAlumnosSnapshot = await get(todosAlumnosRef);
         
         if (todosAlumnosSnapshot.exists()) {
           const alumnos = todosAlumnosSnapshot.val();
-          console.log('realtimeDatabaseManager: IDs de alumnos disponibles:', Object.keys(alumnos));
+          console.log('realtimeDatabaseManager: Total de alumnos disponibles:', Object.keys(alumnos).length);
+          
+          // Buscar manualmente por ID
+          for (const alumnoKey of Object.keys(alumnos)) {
+            const alumno = alumnos[alumnoKey];
+            if (alumnoKey === id || alumno.id === id) {
+              console.log('realtimeDatabaseManager: Alumno encontrado manualmente:', alumno.nome, alumno.apelidos);
+              return {
+                ...alumno,
+                id: alumnoKey
+              };
+            }
+          }
+          
+          console.warn('realtimeDatabaseManager: Alumno no encontrado ni siquiera en la búsqueda manual');
         } else {
           console.log('realtimeDatabaseManager: No hay alumnos en la base de datos');
         }
@@ -321,7 +337,7 @@ class RealtimeDatabaseManager {
       }
       
       const alumnoData = snapshot.val();
-      console.log('realtimeDatabaseManager: Alumno encontrado:', alumnoData.nome, alumnoData.apelidos);
+      console.log('realtimeDatabaseManager: Alumno encontrado directamente:', alumnoData.nome, alumnoData.apelidos);
       
       return {
         ...alumnoData,
@@ -513,37 +529,34 @@ class RealtimeDatabaseManager {
       }
       
       console.log('realtimeDatabaseManager: getMatriculasByAsignatura - Buscando matrículas para asignatura:', asignaturaId);
+      
+      // MÉTODO DIRECTO: Primero obtener TODAS las matrículas y filtrarlas manualmente
+      // Este enfoque puede ser más confiable que usar query con orderByChild en algunos casos
       const matriculasRef = ref(db, "matriculas");
+      const allMatriculasSnapshot = await get(matriculasRef);
       
-      // Primero, obtener todas las matrículas para depurar
-      const todasMatriculasSnapshot = await get(matriculasRef);
-      if (todasMatriculasSnapshot.exists()) {
-        const todasMatriculasData = todasMatriculasSnapshot.val();
-        console.log('realtimeDatabaseManager: Total de matrículas en la base de datos:', Object.keys(todasMatriculasData).length);
-      } else {
+      if (!allMatriculasSnapshot.exists()) {
         console.log('realtimeDatabaseManager: No hay matrículas en la base de datos');
-      }
-      
-      // Ahora buscar las matrículas para esta asignatura específica
-      const matriculasPorAsignaturaQuery = query(matriculasRef, orderByChild("asignaturaId"), equalTo(asignaturaId));
-      const snapshot = await get(matriculasPorAsignaturaQuery);
-      
-      if (!snapshot.exists()) {
-        console.log('realtimeDatabaseManager: No se encontraron matrículas para la asignatura:', asignaturaId);
         return [];
       }
       
-      const matriculasData = snapshot.val();
-      console.log('realtimeDatabaseManager: Datos de matrículas encontrados:', matriculasData);
+      const allMatriculas = allMatriculasSnapshot.val();
+      console.log('realtimeDatabaseManager: Total de matrículas en la base de datos:', Object.keys(allMatriculas).length);
       
-      // Convertir objeto a array
-      const matriculas = Object.keys(matriculasData).map(key => ({
-        ...matriculasData[key],
-        id: key
-      }));
+      // Filtrar manualmente las matrículas por asignaturaId
+      const matriculasFiltradas: Matricula[] = [];
+      Object.keys(allMatriculas).forEach(key => {
+        const matricula = allMatriculas[key];
+        if (matricula.asignaturaId === asignaturaId) {
+          matriculasFiltradas.push({
+            ...matricula,
+            id: key
+          });
+        }
+      });
       
-      console.log('realtimeDatabaseManager: Matrículas procesadas:', matriculas.length, matriculas);
-      return matriculas;
+      console.log('realtimeDatabaseManager: Matrículas encontradas para la asignatura', asignaturaId, ':', matriculasFiltradas.length, matriculasFiltradas);
+      return matriculasFiltradas;
     } catch (error) {
       console.error("Error al obtener matrículas por asignatura:", error);
       return [];
