@@ -139,21 +139,27 @@ class RealtimeDatabaseManager {
   // Obtener alumnos de un profesor
   async getAlumnosByProfesor(profesorId: string): Promise<Alumno[]> {
     try {
+      console.log("Obteniendo alumnos para el profesor:", profesorId);
       const alumnosRef = ref(db, "alumnos");
       const alumnosPorProfesorQuery = query(alumnosRef, orderByChild("profesorId"), equalTo(profesorId));
       const snapshot = await get(alumnosPorProfesorQuery);
       
       if (!snapshot.exists()) {
+        console.log("No se encontraron alumnos para este profesor");
         return [];
       }
       
       const alumnosData = snapshot.val();
+      console.log("Datos de alumnos obtenidos:", alumnosData);
       
       // Convertir objeto a array
-      return Object.keys(alumnosData).map(key => ({
+      const alumnosArray = Object.keys(alumnosData).map(key => ({
         ...alumnosData[key],
         id: key
       }));
+      
+      console.log("Array de alumnos procesado:", alumnosArray);
+      return alumnosArray;
     } catch (error) {
       console.error("Error al obtener alumnos:", error);
       return [];
@@ -163,6 +169,14 @@ class RealtimeDatabaseManager {
   // Añadir un alumno
   async addAlumno(alumno: Omit<Alumno, "id" | "createdAt" | "updatedAt">): Promise<string> {
     try {
+      console.log("Añadiendo alumno:", alumno);
+      
+      // Verificar que el profesorId está presente
+      if (!alumno.profesorId) {
+        console.error("Error: No se proporcionó el profesorId para el alumno");
+        throw new Error("El campo profesorId es obligatorio para crear un alumno");
+      }
+      
       const now = new Date().toISOString();
       const alumnoData = {
         ...alumno,
@@ -170,10 +184,13 @@ class RealtimeDatabaseManager {
         updatedAt: now
       };
       
+      console.log("Datos de alumno a guardar:", alumnoData);
+      
       // Crear una nueva entrada con ID automático
       const newAlumnoRef = push(ref(db, "alumnos"));
       await set(newAlumnoRef, alumnoData);
       
+      console.log("Alumno guardado correctamente con ID:", newAlumnoRef.key);
       return newAlumnoRef.key!;
     } catch (error) {
       console.error("Error al añadir alumno:", error);
@@ -184,6 +201,16 @@ class RealtimeDatabaseManager {
   // Añadir múltiples alumnos (para importación)
   async addMultipleAlumnos(alumnos: Omit<Alumno, "id" | "createdAt" | "updatedAt">[]): Promise<string[]> {
     try {
+      console.log(`Añadiendo ${alumnos.length} alumnos en lote`);
+      
+      // Verificar que todos los alumnos tienen profesorId
+      for (const alumno of alumnos) {
+        if (!alumno.profesorId) {
+          console.error("Error: Uno de los alumnos no tiene profesorId");
+          throw new Error("Todos los alumnos deben tener un profesorId válido");
+        }
+      }
+      
       const now = new Date().toISOString();
       const ids: string[] = [];
       
@@ -204,9 +231,12 @@ class RealtimeDatabaseManager {
         ids.push(key);
       }
       
+      console.log(`Guardando ${Object.keys(updates).length} actualizaciones en lote`);
+      
       // Ejecutar todas las actualizaciones a la vez
       await update(ref(db), updates);
       
+      console.log(`${ids.length} alumnos guardados correctamente`);
       return ids;
     } catch (error) {
       console.error("Error al añadir múltiples alumnos:", error);
@@ -277,21 +307,27 @@ class RealtimeDatabaseManager {
   // Obtener asignaturas de un profesor
   async getAsignaturasByProfesor(profesorId: string): Promise<Asignatura[]> {
     try {
+      console.log("Obteniendo asignaturas para el profesor:", profesorId);
       const asignaturasRef = ref(db, "asignaturas");
       const asignaturasPorProfesorQuery = query(asignaturasRef, orderByChild("profesorId"), equalTo(profesorId));
       const snapshot = await get(asignaturasPorProfesorQuery);
       
       if (!snapshot.exists()) {
+        console.log("No se encontraron asignaturas para este profesor");
         return [];
       }
       
       const asignaturasData = snapshot.val();
+      console.log("Datos de asignaturas obtenidos:", asignaturasData);
       
       // Convertir objeto a array
-      return Object.keys(asignaturasData).map(key => ({
+      const asignaturasArray = Object.keys(asignaturasData).map(key => ({
         ...asignaturasData[key],
         id: key
       }));
+      
+      console.log("Array de asignaturas procesado:", asignaturasArray);
+      return asignaturasArray;
     } catch (error) {
       console.error("Error al obtener asignaturas:", error);
       return [];
@@ -301,6 +337,14 @@ class RealtimeDatabaseManager {
   // Añadir una asignatura
   async addAsignatura(asignatura: Omit<Asignatura, "id" | "createdAt" | "updatedAt">): Promise<string> {
     try {
+      console.log("Añadiendo asignatura:", asignatura);
+      
+      // Verificar que el profesorId está presente
+      if (!asignatura.profesorId) {
+        console.error("Error: No se proporcionó el profesorId para la asignatura");
+        throw new Error("El campo profesorId es obligatorio para crear una asignatura");
+      }
+      
       const now = new Date().toISOString();
       const asignaturaData = {
         ...asignatura,
@@ -308,10 +352,13 @@ class RealtimeDatabaseManager {
         updatedAt: now
       };
       
+      console.log("Datos de asignatura a guardar:", asignaturaData);
+      
       // Crear una nueva entrada con ID automático
       const newAsignaturaRef = push(ref(db, "asignaturas"));
       await set(newAsignaturaRef, asignaturaData);
       
+      console.log("Asignatura guardada correctamente con ID:", newAsignaturaRef.key);
       return newAsignaturaRef.key!;
     } catch (error) {
       console.error("Error al añadir asignatura:", error);

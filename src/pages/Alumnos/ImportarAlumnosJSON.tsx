@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
-import { useAuth } from '../../context/AuthContext';
-import { storageManager } from '../../utils/storageManager';
+import { useRealtimeAuth } from '../../firebase/RealtimeAuthContext';
+import { dataManager } from '../../utils/dataManager';
 import type { Alumno } from '../../utils/storageManager';
 
 interface ImportarAlumnosJSONProps {
@@ -25,7 +25,7 @@ interface AlumnoJSON {
 }
 
 const ImportarAlumnosJSON: React.FC<ImportarAlumnosJSONProps> = ({ onImportComplete, onCancel }) => {
-  const { currentUser } = useAuth();
+  const { currentUser } = useRealtimeAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -131,18 +131,21 @@ const ImportarAlumnosJSON: React.FC<ImportarAlumnosJSONProps> = ({ onImportCompl
     }
   };
 
-  const handleImport = () => {
+  const handleImport = async () => {
     if (!parseResult || !parseResult.successful.length || !currentUser) {
       return;
     }
     
     try {
-      // Importar alumnos
-      storageManager.addMultipleAlumnos(parseResult.successful);
+      setIsLoading(true);
+      // Importar alumnos usando dataManager
+      await dataManager.addMultipleAlumnos(parseResult.successful);
+      setIsLoading(false);
       onImportComplete();
     } catch (error) {
       console.error('Error al importar alumnos:', error);
       alert('Ocorreu un erro ao importar os alumnos. Por favor, inténteo de novo.');
+      setIsLoading(false);
     }
   };
 
