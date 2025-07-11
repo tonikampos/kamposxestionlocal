@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../../context/AuthContext';
+import { useRealtimeAuth } from '../../firebase/RealtimeAuthContext';
 import { dataManager } from '../../utils/dataManager';
 import type { Alumno } from '../../utils/storageManager';
 import { useNavigate } from 'react-router-dom';
@@ -9,7 +9,7 @@ interface AlumnosListProps {
 }
 
 const AlumnosList: React.FC<AlumnosListProps> = ({ onEditAlumno }) => {
-  const { currentUser } = useAuth();
+  const { currentUser } = useRealtimeAuth();
   const [alumnos, setAlumnos] = useState<Alumno[]>([]);
   const [filteredAlumnos, setFilteredAlumnos] = useState<Alumno[]>([]);
   const [searchTerm, setSearchTerm] = useState('');

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
+import { useRealtimeAuth } from '../../firebase/RealtimeAuthContext';
 import { dataManager } from '../../utils/dataManager';
 import type { Asignatura } from '../../utils/storageManager';
 
@@ -15,7 +15,7 @@ const NotasAsignaturasSelector: React.FC<NotasAsignaturasSelectorProps> = ({
 }) => {
   const [asignaturas, setAsignaturas] = useState<Asignatura[]>([]);
   const [loading, setLoading] = useState(true);
-  const { currentUser } = useAuth();
+  const { currentUser } = useRealtimeAuth();
   const navigate = useNavigate();
 
   useEffect(() => {

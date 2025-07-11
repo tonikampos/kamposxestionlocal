@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
+import { useRealtimeAuth } from '../../firebase/RealtimeAuthContext';
 import { dataManager } from '../../utils/dataManager';
 import type { 
   Asignatura, 
@@ -12,7 +12,7 @@ import type {
 const ConfiguracionAvaliacionPage = () => {
   const { id: asignaturaId } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { currentUser } = useAuth();
+  const { currentUser } = useRealtimeAuth();
   
   const [asignatura, setAsignatura] = useState<Asignatura | null>(null);
   const [configuracion, setConfiguracion] = useState<ConfiguracionAvaliacion | null>(null);

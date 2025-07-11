@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
+import { useRealtimeAuth } from '../../firebase/RealtimeAuthContext';
 import { dataManager } from '../../utils/dataManager';
 import type { Asignatura, Alumno } from '../../utils/storageManager';
 
 const MatriculasAsignatura: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { currentUser } = useAuth();
+  const { currentUser } = useRealtimeAuth();
   
   const [asignatura, setAsignatura] = useState<Asignatura | null>(null);
   const [alumnosMatriculados, setAlumnosMatriculados] = useState<Alumno[]>([]);

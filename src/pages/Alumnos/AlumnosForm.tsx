@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useAuth } from '../../context/AuthContext';
+import { useRealtimeAuth } from '../../firebase/RealtimeAuthContext';
 import { dataManager } from '../../utils/dataManager';
 import type { Alumno } from '../../utils/storageManager';
 
@@ -10,7 +10,7 @@ interface AlumnosFormProps {
 }
 
 const AlumnosForm: React.FC<AlumnosFormProps> = ({ alumno, onSave, onCancel }) => {
-  const { currentUser } = useAuth();
+  const { currentUser } = useRealtimeAuth();
   const isEditMode = !!alumno;
 
   const [formData, setFormData] = useState({

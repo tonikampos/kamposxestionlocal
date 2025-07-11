@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
+import { useRealtimeAuth } from '../../firebase/RealtimeAuthContext';
 import { NIVEL_EDUCATIVO } from '../../utils/storageManager';
 import { dataManager } from '../../utils/dataManager';
 import type { Asignatura, NivelEducativo } from '../../utils/storageManager';
@@ -8,7 +8,7 @@ import type { Asignatura, NivelEducativo } from '../../utils/storageManager';
 const AsignaturasForm = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { currentUser } = useAuth();
+  const { currentUser } = useRealtimeAuth();
   const isEditing = !!id;
 
   // Estado inicial del formulario

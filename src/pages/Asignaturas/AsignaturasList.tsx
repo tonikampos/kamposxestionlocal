@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
+import { useRealtimeAuth } from '../../firebase/RealtimeAuthContext';
 import { NIVEL_EDUCATIVO } from '../../utils/storageManager';
 import { dataManager } from '../../utils/dataManager';
 import type { Asignatura } from '../../utils/storageManager';
@@ -10,7 +10,7 @@ const AsignaturasList = () => {
   const [loading, setLoading] = useState(true);
   const [asignaturasConMatriculas, setAsignaturasConMatriculas] = useState<Record<string, number>>({});
   const navigate = useNavigate();
-  const { currentUser } = useAuth();
+  const { currentUser } = useRealtimeAuth();
 
   // Cargar asignaturas del profesor autenticado
   useEffect(() => {

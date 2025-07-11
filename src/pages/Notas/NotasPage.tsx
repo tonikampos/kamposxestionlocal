@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import NotasAsignaturasSelector from './NotasAsignaturasSelector';
 import NotasAlumnosList from './NotasAlumnosList';
 import NotasForm from './NotasForm';
-import { useAuth } from '../../context/AuthContext';
+import { useRealtimeAuth } from '../../firebase/RealtimeAuthContext';
 import { dataManager } from '../../utils/dataManager';
 import type { Alumno } from '../../utils/storageManager';
 
@@ -10,7 +10,7 @@ const NotasPage = () => {
   const [selectedAsignaturaId, setSelectedAsignaturaId] = useState<string | null>(null);
   const [selectedAlumno, setSelectedAlumno] = useState<Alumno | null>(null);
   const [refreshKey, setRefreshKey] = useState<number>(0); // Clave para forzar refrescado de componentes
-  const { currentUser } = useAuth();
+  const { currentUser } = useRealtimeAuth();
 
   // Efecto para cargar el alumno seleccionado desde la lista de alumnos (si existe)
   useEffect(() => {
