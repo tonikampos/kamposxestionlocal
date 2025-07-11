@@ -90,19 +90,15 @@ const AlumnosList: React.FC<AlumnosListProps> = ({ onEditAlumno }) => {
   };
 
   const handleDeleteAlumno = async (id: string) => {
-    // Verificar si el alumno está matriculado
-    if (matriculadosMap[id]) {
-      alert('Non se pode eliminar un alumno que está matriculado en algunha asignatura');
-      return;
-    }
-
     if (window.confirm('¿Estás seguro de que queres eliminar este alumno?')) {
       try {
         await dataManager.deleteAlumno(id);
         loadAlumnos(); // Recargar la lista
       } catch (error) {
         console.error('Error al eliminar alumno:', error);
-        alert('Erro ao eliminar o alumno');
+        // Mostrar mensaje de error detallado si está disponible
+        const errorMessage = error instanceof Error ? error.message : 'Erro ao eliminar o alumno';
+        alert(errorMessage);
       }
     }
   };
@@ -180,21 +176,22 @@ const AlumnosList: React.FC<AlumnosListProps> = ({ onEditAlumno }) => {
                       >
                         Editar
                       </button>
-                      {matriculadosMap[alumno.id] ? (
-                        <button 
-                          onClick={() => irANotas(alumno)}
-                          className="text-green-600 hover:text-green-800"
-                        >
-                          Ver notas
-                        </button>
-                      ) : (
-                        <button 
-                          onClick={() => handleDeleteAlumno(alumno.id)}
-                          className="text-red-600 hover:text-red-800"
-                        >
-                          Eliminar
-                        </button>
-                      )}
+                      <button 
+                        onClick={() => irANotas(alumno)}
+                        className="text-green-600 hover:text-green-800 mr-2"
+                      >
+                        Ver notas
+                      </button>
+                      
+                      <button 
+                        onClick={() => handleDeleteAlumno(alumno.id)}
+                        className="text-red-600 hover:text-red-800"
+                        title={matriculadosMap[alumno.id] ? 
+                          "O alumno está matriculado en algunha asignatura, pero podes intentar eliminalo" : 
+                          "Eliminar alumno"}
+                      >
+                        Eliminar
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -249,21 +246,22 @@ const AlumnosList: React.FC<AlumnosListProps> = ({ onEditAlumno }) => {
                   >
                     Editar
                   </button>
-                  {matriculadosMap[alumno.id] ? (
-                    <button 
-                      onClick={() => irANotas(alumno)}
-                      className="text-green-600 hover:text-green-800 text-sm py-1 px-2 border border-green-600 rounded"
-                    >
-                      Ver notas
-                    </button>
-                  ) : (
-                    <button 
-                      onClick={() => handleDeleteAlumno(alumno.id)}
-                      className="text-red-600 hover:text-red-800 text-sm py-1 px-2 border border-red-600 rounded"
-                    >
-                      Eliminar
-                    </button>
-                  )}
+                  <button 
+                    onClick={() => irANotas(alumno)}
+                    className="text-green-600 hover:text-green-800 text-sm py-1 px-2 border border-green-600 rounded"
+                  >
+                    Ver notas
+                  </button>
+                  
+                  <button 
+                    onClick={() => handleDeleteAlumno(alumno.id)}
+                    className="text-red-600 hover:text-red-800 text-sm py-1 px-2 border border-red-600 rounded ml-2"
+                    title={matriculadosMap[alumno.id] ? 
+                      "O alumno está matriculado en algunha asignatura, pero podes intentar eliminalo" : 
+                      "Eliminar alumno"}
+                  >
+                    Eliminar
+                  </button>
                 </div>
               </div>
             ))}

@@ -279,11 +279,46 @@ class RealtimeDatabaseManager {
       const matriculasSnapshot = await get(matriculasQuery);
       
       if (matriculasSnapshot.exists()) {
-        throw new Error("No se puede eliminar un alumno con matrículas activas");
+        // Obtener nombres de las asignaturas en las que está matriculado
+        const matriculasData = matriculasSnapshot.val();
+        const asignaturasIds = Object.values(matriculasData).map((m: any) => m.asignaturaId);
+        
+        // Obtener información de las asignaturas
+        const asignaturasInfo = await Promise.all(
+          asignaturasIds.map(async (asigId: string) => {
+            const asigSnapshot = await get(ref(db, `asignaturas/${asigId}`));
+            if (asigSnapshot.exists()) {
+              const asigData = asigSnapshot.val();
+              return `${asigData.nome} (${asigData.nivel} - ${asigData.curso}º)`;
+            }
+            return `Asignatura ID: ${asigId}`;
+          })
+        );
+        
+        // Construir mensaje de error con información sobre las asignaturas
+        const asignaturasLista = asignaturasInfo.join(", ");
+        throw new Error(
+          `Non se pode eliminar un alumno con matrículas activas. ` +
+          `O alumno está matriculado nas seguintes asignaturas: ${asignaturasLista}. ` +
+          `Debe eliminarse a matrícula antes de eliminar o alumno.`
+        );
       }
       
       // Si no tiene matrículas, podemos eliminar
       await remove(ref(db, `alumnos/${id}`));
+
+      // También eliminar cualquier nota asociada al alumno
+      const notasRef = ref(db, "notas");
+      const notasQuery = query(notasRef, orderByChild("alumnoId"), equalTo(id));
+      const notasSnapshot = await get(notasQuery);
+      
+      if (notasSnapshot.exists()) {
+        const notasData = notasSnapshot.val();
+        // Eliminar cada registro de notas
+        for (const notaKey in notasData) {
+          await remove(ref(db, `notas/${notaKey}`));
+        }
+      }
     } catch (error) {
       console.error("Error al eliminar alumno:", error);
       throw error;
