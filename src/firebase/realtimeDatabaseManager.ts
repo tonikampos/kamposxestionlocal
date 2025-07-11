@@ -546,17 +546,127 @@ class RealtimeDatabaseManager {
   // Eliminar una asignatura
   async deleteAsignatura(id: string): Promise<void> {
     try {
-      // Verificar primero si la asignatura tiene matrículas
-      const matriculasRef = ref(db, "matriculas");
-      const matriculasQuery = query(matriculasRef, orderByChild("asignaturaId"), equalTo(id));
-      const matriculasSnapshot = await get(matriculasQuery);
+      // Verificar primero si la asignatura existe
+      const asignaturaRef = ref(db, `asignaturas/${id}`);
+      const asignaturaSnapshot = await get(asignaturaRef);
       
-      if (matriculasSnapshot.exists()) {
-        throw new Error("No se puede eliminar una asignatura con alumnos matriculados");
+      if (!asignaturaSnapshot.exists()) {
+        throw new Error("A asignatura non existe");
       }
       
-      // Si no tiene matrículas, podemos eliminar
-      await remove(ref(db, `asignaturas/${id}`));
+      // Obtener nombre de la asignatura para mensajes informativos
+      const asignaturaData = asignaturaSnapshot.val();
+      const asignaturaNombre = asignaturaData.nome || id;
+      
+      // Comprobar si hay matrículas asociadas a esta asignatura
+      // Esta implementación alternativa es más segura si hay problemas con índices
+      let tieneMatriculas = false;
+      let alumnosMatriculados: any[] = [];
+      let matriculasIds: string[] = [];
+      
+      try {
+        // Intentamos usar la consulta con índice
+        const matriculasRef = ref(db, "matriculas");
+        const matriculasQuery = query(matriculasRef, orderByChild("asignaturaId"), equalTo(id));
+        const matriculasSnapshot = await get(matriculasQuery);
+        
+        if (matriculasSnapshot.exists()) {
+          tieneMatriculas = true;
+          const matriculasData = matriculasSnapshot.val();
+          Object.entries(matriculasData).forEach(([matriculaId, matricula]: [string, any]) => {
+            alumnosMatriculados.push(matricula.alumnoId);
+            matriculasIds.push(matriculaId);
+          });
+        }
+      } catch (indexError) {
+        console.warn("Error al buscar matrículas con índice:", indexError);
+        
+        // Si falla la consulta por índice, hacemos una búsqueda manual
+        // Esto es más lento pero funciona sin índices
+        const todasMatriculasRef = ref(db, "matriculas");
+        const todasMatriculasSnapshot = await get(todasMatriculasRef);
+        
+        if (todasMatriculasSnapshot.exists()) {
+          const todasMatriculas = todasMatriculasSnapshot.val();
+          
+          // Filtrar manualmente
+          Object.entries(todasMatriculas).forEach(([matriculaId, matricula]: [string, any]) => {
+            if (matricula.asignaturaId === id) {
+              tieneMatriculas = true;
+              alumnosMatriculados.push(matricula.alumnoId);
+              matriculasIds.push(matriculaId);
+            }
+          });
+        }
+      }
+      
+      // Si tiene matrículas, mostramos información detallada
+      if (tieneMatriculas) {
+        // Obtener información de los alumnos
+        const alumnosInfo = await Promise.all(
+          [...new Set(alumnosMatriculados)].map(async (alumnoId: string) => {
+            const alumnoSnapshot = await get(ref(db, `alumnos/${alumnoId}`));
+            if (alumnoSnapshot.exists()) {
+              const alumnoData = alumnoSnapshot.val();
+              return `${alumnoData.nome} ${alumnoData.apelidos}`;
+            }
+            return `Alumno ID: ${alumnoId}`;
+          })
+        );
+        
+        // Construir mensaje de error con información sobre los alumnos
+        const alumnosLista = alumnosInfo.join(", ");
+        throw new Error(
+          `Non se pode eliminar a asignatura "${asignaturaNombre}" porque ten alumnos matriculados. ` +
+          `Alumnos matriculados: ${alumnosLista}. ` +
+          `Debe eliminarse as matrículas antes de eliminar a asignatura.`
+        );
+      }
+      
+      // También eliminar cualquier nota asociada a la asignatura
+      let notasEliminadas = 0;
+      
+      try {
+        const notasRef = ref(db, "notas");
+        const notasQuery = query(notasRef, orderByChild("asignaturaId"), equalTo(id));
+        const notasSnapshot = await get(notasQuery);
+        
+        if (notasSnapshot.exists()) {
+          const notasData = notasSnapshot.val();
+          // Eliminar cada registro de notas
+          for (const notaKey in notasData) {
+            await remove(ref(db, `notas/${notaKey}`));
+            notasEliminadas++;
+          }
+        }
+      } catch (indexError) {
+        console.warn("Error al buscar notas con índice:", indexError);
+        
+        // Búsqueda manual de notas si falla el índice
+        const todasNotasRef = ref(db, "notas");
+        const todasNotasSnapshot = await get(todasNotasRef);
+        
+        if (todasNotasSnapshot.exists()) {
+          const todasNotas = todasNotasSnapshot.val();
+          
+          // Filtrar y eliminar manualmente
+          for (const notaKey in todasNotas) {
+            const nota = todasNotas[notaKey];
+            if (nota.asignaturaId === id) {
+              await remove(ref(db, `notas/${notaKey}`));
+              notasEliminadas++;
+            }
+          }
+        }
+      }
+      
+      // Si no tiene matrículas, podemos eliminar la asignatura
+      await remove(asignaturaRef);
+      console.log(`Asignatura "${asignaturaNombre}" (ID: ${id}) eliminada correctamente`);
+      
+      if (notasEliminadas > 0) {
+        console.log(`${notasEliminadas} notas asociadas a la asignatura "${asignaturaNombre}" eliminadas correctamente`);
+      }
     } catch (error) {
       console.error("Error al eliminar asignatura:", error);
       throw error;

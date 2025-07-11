@@ -9,6 +9,8 @@ const AsignaturasList = () => {
   const [asignaturas, setAsignaturas] = useState<Asignatura[]>([]);
   const [loading, setLoading] = useState(true);
   const [asignaturasConMatriculas, setAsignaturasConMatriculas] = useState<Record<string, number>>({});
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const navigate = useNavigate();
   const { currentUser } = useRealtimeAuth();
 
@@ -34,9 +36,13 @@ const AsignaturasList = () => {
       }
       
       setAsignaturasConMatriculas(matriculasInfo);
+      
+      // Limpiar mensajes de error previos al cargar con éxito
+      setErrorMessage(null);
     } catch (error) {
       console.error('Error al cargar asignaturas:', error);
-      alert('Ocorreu un erro ao cargar as asignaturas');
+      const message = error instanceof Error ? error.message : 'Ocorreu un erro ao cargar as asignaturas';
+      setErrorMessage(message);
     } finally {
       setLoading(false);
     }
@@ -47,10 +53,13 @@ const AsignaturasList = () => {
       try {
         await dataManager.deleteAsignatura(id);
         loadAsignaturas(); // Recargar la lista
-        alert('Asignatura eliminada con éxito');
+        setSuccessMessage('Asignatura eliminada con éxito');
+        setTimeout(() => setSuccessMessage(null), 5000); // Desaparece después de 5 segundos
       } catch (error) {
         console.error('Error al eliminar asignatura:', error);
-        alert('Ocorreu un erro ao eliminar a asignatura');
+        // Mostrar mensaje de error específico si está disponible
+        const message = error instanceof Error ? error.message : 'Ocorreu un erro ao eliminar a asignatura';
+        setErrorMessage(message);
       }
     }
   };
@@ -60,7 +69,55 @@ const AsignaturasList = () => {
   }
 
   return (
-    <div className="bg-white p-6 rounded-lg shadow-md">
+    <div className="bg-white p-6 rounded-lg shadow-md relative">
+      {/* Mensaje de éxito */}
+      {successMessage && (
+        <div className="fixed top-4 right-4 bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded shadow-md z-50 max-w-md">
+          <div className="flex items-center">
+            <div className="py-1">
+              <svg className="h-6 w-6 text-green-500 mr-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <div>
+              <p className="font-bold">Éxito</p>
+              <p className="text-sm">{successMessage}</p>
+            </div>
+            <div className="ml-auto">
+              <button onClick={() => setSuccessMessage(null)} className="text-green-500 hover:text-green-700">
+                <svg className="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Mensaje de error */}
+      {errorMessage && (
+        <div className="fixed top-4 right-4 bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded shadow-md z-50 max-w-md">
+          <div className="flex">
+            <div className="py-1">
+              <svg className="h-6 w-6 text-red-500 mr-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+            <div>
+              <p className="font-bold">Erro</p>
+              <p className="text-sm">{errorMessage}</p>
+            </div>
+            <div className="ml-auto">
+              <button onClick={() => setErrorMessage(null)} className="text-red-500 hover:text-red-700">
+                <svg className="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-xl font-bold text-blue-800">As miñas asignaturas</h2>
         <button
@@ -144,6 +201,9 @@ const AsignaturasList = () => {
                     <button
                       onClick={() => handleDelete(asignatura.id)}
                       className="text-red-600 hover:text-red-800"
+                      title={asignaturasConMatriculas[asignatura.id] > 0 
+                        ? `Non se pode eliminar: ten ${asignaturasConMatriculas[asignatura.id]} alumnos matriculados` 
+                        : "Eliminar asignatura"}
                     >
                       Eliminar
                     </button>
