@@ -57,10 +57,25 @@ const MatriculasAsignatura: React.FC = () => {
 
         setAsignatura(asignaturaData);
 
+        // IMPORTANTE: Limpiar los estados antes de cargar nuevos datos
+        // Esto evita problemas con datos anteriores que pueden persistir
+        setAlumnosMatriculados([]);
+        setAlumnosDisponibles([]);
+        setSearchResults([]);
+
         // Cargar alumnos matriculados y sus matrículas
         console.log('MatriculasAsignatura: Obteniendo matrículas para la asignatura:', id);
+        
+        // Obtener todas las matrículas primero para depurar
+        console.log('MatriculasAsignatura: Verificando todas las matrículas en la base de datos');
+        
+        // Cargar específicamente las matrículas de esta asignatura
         const matriculas = await dataManager.getMatriculasByAsignatura(id);
-        console.log('MatriculasAsignatura: Matrículas obtenidas:', matriculas);
+        console.log('MatriculasAsignatura: Matrículas obtenidas para esta asignatura:', matriculas.length, matriculas);
+        
+        if (matriculas.length === 0) {
+          console.log('MatriculasAsignatura: No hay alumnos matriculados en esta asignatura');
+        }
         
         const alumnosIds = matriculas.map(m => m.alumnoId);
         console.log('MatriculasAsignatura: IDs de alumnos matriculados:', alumnosIds);
@@ -127,22 +142,27 @@ const MatriculasAsignatura: React.FC = () => {
       if (!id) return;
 
       console.log('MatriculasAsignatura: Matriculando alumno con ID:', alumnoId, 'en asignatura con ID:', id);
-      await dataManager.matricularAlumno(alumnoId, id);
-      console.log('MatriculasAsignatura: Alumno matriculado exitosamente');
       
-      // Actualizar listas
-      const alumnoMatriculado = alumnosDisponibles.find(a => a.id === alumnoId);
-      if (alumnoMatriculado) {
-        console.log('MatriculasAsignatura: Actualizando listas con el alumno matriculado:', alumnoMatriculado.nome, alumnoMatriculado.apelidos);
-        setAlumnosMatriculados(prev => [...prev, alumnoMatriculado]);
-        setAlumnosDisponibles(prev => prev.filter(a => a.id !== alumnoId));
-        setSearchResults(prev => prev.filter(a => a.id !== alumnoId));
-        
-        // Mostrar mensaje de éxito
-        alert(`Alumno ${alumnoMatriculado.nome} ${alumnoMatriculado.apelidos} matriculado con éxito.`);
-      } else {
-        console.warn('MatriculasAsignatura: No se encontró el alumno en la lista de disponibles');
+      // Obtener el alumno antes de matricularlo para tener sus datos completos
+      const alumnoCompleto = await dataManager.getAlumnoById(alumnoId);
+      if (!alumnoCompleto) {
+        console.error('MatriculasAsignatura: No se pudo encontrar el alumno con ID:', alumnoId);
+        throw new Error('No se pudo encontrar el alumno');
       }
+      
+      // Matricular el alumno
+      await dataManager.matricularAlumno(alumnoId, id);
+      console.log('MatriculasAsignatura: Alumno matriculado exitosamente:', alumnoCompleto.nome);
+      
+      // Actualizar listas usando el alumno completo obtenido de la base de datos
+      console.log('MatriculasAsignatura: Actualizando listas con el alumno matriculado:', alumnoCompleto.nome, alumnoCompleto.apelidos);
+      setAlumnosMatriculados(prev => [...prev, alumnoCompleto]);
+      setAlumnosDisponibles(prev => prev.filter(a => a.id !== alumnoId));
+      setSearchResults(prev => prev.filter(a => a.id !== alumnoId));
+      
+      // Mostrar mensaje de éxito
+      alert(`Alumno ${alumnoCompleto.nome} ${alumnoCompleto.apelidos} matriculado con éxito.`);
+      
     } catch (error) {
       console.error('Error al matricular alumno:', error);
       alert(error instanceof Error ? error.message : 'Erro ao matricular o alumno');
@@ -175,6 +195,50 @@ const MatriculasAsignatura: React.FC = () => {
     }
   };
 
+  // Función para recargar datos manualmente
+  const handleRecargarDatos = async () => {
+    if (!id || !currentUser) return;
+    console.log('MatriculasAsignatura: Recargando datos manualmente');
+    setLoading(true);
+    
+    try {
+      // Actualizar datos de alumnos matriculados
+      const matriculas = await dataManager.getMatriculasByAsignatura(id);
+      console.log('MatriculasAsignatura: Matrículas recargadas:', matriculas.length, matriculas);
+      
+      const alumnosIds = matriculas.map(m => m.alumnoId);
+      
+      // Cargar detalles de los alumnos matriculados
+      const alumnosMatr: Alumno[] = [];
+      for (const alumnoId of alumnosIds) {
+        const alumno = await dataManager.getAlumnoById(alumnoId);
+        if (alumno) {
+          alumnosMatr.push(alumno);
+        }
+      }
+      
+      console.log('MatriculasAsignatura: Alumnos matriculados recargados:', alumnosMatr.length);
+      setAlumnosMatriculados(alumnosMatr);
+      
+      // Recargar alumnos disponibles
+      const todosAlumnos = await dataManager.getAlumnosByProfesor(currentUser.id);
+      
+      // Filtrar los que no están matriculados
+      const disponibles = todosAlumnos.filter(
+        alumno => !alumnosIds.includes(alumno.id)
+      );
+      
+      setAlumnosDisponibles(disponibles);
+      setSearchResults(disponibles);
+      alert('Datos actualizados correctamente');
+    } catch (error) {
+      console.error('Error al recargar datos:', error);
+      alert('Error al recargar los datos');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (loading) {
     return <div className="text-center py-8">Cargando datos...</div>;
   }
@@ -190,12 +254,22 @@ const MatriculasAsignatura: React.FC = () => {
           <h2 className="text-xl font-bold text-blue-800">
             Matricular: {asignatura.nome} ({asignatura.nivel} {asignatura.curso}º)
           </h2>
-          <button
-            onClick={() => navigate('/asignaturas')}
-            className="bg-gray-200 hover:bg-gray-300 text-gray-800 py-2 px-4 rounded-lg transition-colors"
-          >
-            Volver á lista
-          </button>
+          <div className="flex space-x-2">
+            <button
+              onClick={handleRecargarDatos}
+              className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg transition-colors"
+              disabled={loading}
+              title="Recargar datos de alumnos matriculados"
+            >
+              {loading ? 'Cargando...' : 'Actualizar datos'}
+            </button>
+            <button
+              onClick={() => navigate('/asignaturas')}
+              className="bg-gray-200 hover:bg-gray-300 text-gray-800 py-2 px-4 rounded-lg transition-colors"
+            >
+              Volver á lista
+            </button>
+          </div>
         </div>
 
         <div className="mb-6">
@@ -301,6 +375,15 @@ const MatriculasAsignatura: React.FC = () => {
               </table>
             </div>
           )}
+        </div>
+
+        <div className="mt-8">
+          <button
+            onClick={handleRecargarDatos}
+            className="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg transition-colors"
+          >
+            Recargar datos
+          </button>
         </div>
       </div>
     </div>

@@ -293,12 +293,30 @@ class RealtimeDatabaseManager {
   // Obtener alumno por ID
   async getAlumnoById(id: string): Promise<Alumno | undefined> {
     try {
+      if (!id) {
+        console.error('realtimeDatabaseManager: ID de alumno inválido:', id);
+        return undefined;
+      }
+      
       console.log('realtimeDatabaseManager: getAlumnoById - Buscando alumno con ID:', id);
       const alumnoRef = ref(db, `alumnos/${id}`);
       const snapshot = await get(alumnoRef);
       
       if (!snapshot.exists()) {
         console.log('realtimeDatabaseManager: No se encontró ningún alumno con ID:', id);
+        
+        // Intentar buscar en todas las colecciones para depurar
+        console.log('realtimeDatabaseManager: Intentando obtener todos los alumnos para depurar');
+        const todosAlumnosRef = ref(db, 'alumnos');
+        const todosAlumnosSnapshot = await get(todosAlumnosRef);
+        
+        if (todosAlumnosSnapshot.exists()) {
+          const alumnos = todosAlumnosSnapshot.val();
+          console.log('realtimeDatabaseManager: IDs de alumnos disponibles:', Object.keys(alumnos));
+        } else {
+          console.log('realtimeDatabaseManager: No hay alumnos en la base de datos');
+        }
+        
         return undefined;
       }
       
@@ -489,8 +507,24 @@ class RealtimeDatabaseManager {
   // Obtener matrículas por asignatura
   async getMatriculasByAsignatura(asignaturaId: string): Promise<Matricula[]> {
     try {
+      if (!asignaturaId) {
+        console.warn('realtimeDatabaseManager: ID de asignatura inválido para getMatriculasByAsignatura:', asignaturaId);
+        return [];
+      }
+      
       console.log('realtimeDatabaseManager: getMatriculasByAsignatura - Buscando matrículas para asignatura:', asignaturaId);
       const matriculasRef = ref(db, "matriculas");
+      
+      // Primero, obtener todas las matrículas para depurar
+      const todasMatriculasSnapshot = await get(matriculasRef);
+      if (todasMatriculasSnapshot.exists()) {
+        const todasMatriculasData = todasMatriculasSnapshot.val();
+        console.log('realtimeDatabaseManager: Total de matrículas en la base de datos:', Object.keys(todasMatriculasData).length);
+      } else {
+        console.log('realtimeDatabaseManager: No hay matrículas en la base de datos');
+      }
+      
+      // Ahora buscar las matrículas para esta asignatura específica
       const matriculasPorAsignaturaQuery = query(matriculasRef, orderByChild("asignaturaId"), equalTo(asignaturaId));
       const snapshot = await get(matriculasPorAsignaturaQuery);
       
