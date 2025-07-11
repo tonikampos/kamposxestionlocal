@@ -133,6 +133,7 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
       }
       
       // Gardar directamente as notas completas tal como están no estado
+      // Ahora el updateNotaAlumno calculará las notas finales de evaluaciones y curso
       await dataManager.updateNotaAlumno(notaAlumno);
       
       // Recargar las notas para obtener los cálculos actualizados
@@ -144,16 +145,24 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
         throw new Error("Non se atoparon as notas despois de gardar");
       }
       
+      console.log("Notas actualizadas:", notaActualizada);
+      console.log("Nota final calculada:", notaActualizada.notaFinal);
+      
+      // Actualizar el estado con las notas actualizadas y calculadas
       setNotaAlumno(notaActualizada);
       
       // Mostrar mensaje con los cálculos realizados
       let mensaje = 'Notas gardadas correctamente.\n\n';
       if (notaActualizada?.notaFinal !== undefined) {
         mensaje += `Nota final calculada: ${notaActualizada.notaFinal.toFixed(2)}`;
+      } else {
+        mensaje += 'Non se puido calcular a nota final. Comproba a configuración de avaliacións.';
       }
       
       alert(mensaje);
-      onSaved?.(); // Notificar que se gardaron as notas para refrescar a lista
+      
+      // Notificar que se guardaron las notas para refrescar la lista
+      onSaved?.();
       onNotasSaved?.(); // Notificar que as notas foron gardadas (para actualizar a interface)
     } catch (error) {
       console.error('Error al guardar notas:', error);

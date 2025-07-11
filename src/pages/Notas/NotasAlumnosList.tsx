@@ -96,9 +96,12 @@ const NotasAlumnosList: React.FC<NotasAlumnosListProps> = ({
       }
       
       // Si ya tiene nota final calculada, usarla
-      if (notaAlumno.notaFinal !== undefined) {
+      if (notaAlumno.notaFinal !== undefined && notaAlumno.notaFinal !== null) {
+        console.log(`Usando nota final existente para alumno ${alumnoId}:`, notaAlumno.notaFinal);
         return notaAlumno.notaFinal;
       }
+      
+      console.log(`Calculando nota para alumno ${alumnoId} porque no tiene nota final guardada.`);
       
       // Calcular la nota final según los porcentajes de las evaluaciones
       let notaFinal = 0;
@@ -109,19 +112,28 @@ const NotasAlumnosList: React.FC<NotasAlumnosListProps> = ({
           // Obtener el porcentaje de la evaluación desde la configuración
           const avalConfig = avaliacionsMap[avaliacion.avaliacionId];
           if (avalConfig) {
-            notaFinal += avaliacion.notaFinal * avalConfig.porcentaxeNota;
+            const contribucion = avaliacion.notaFinal * avalConfig.porcentaxeNota / 100;
+            notaFinal += contribucion;
             porcentajeTotal += avalConfig.porcentaxeNota;
+            console.log(`Evaluación ${avalConfig.numero}: Nota ${avaliacion.notaFinal}, porcentaje ${avalConfig.porcentaxeNota}%, contribución: ${contribucion}`);
+          } else {
+            console.warn(`No se encontró configuración para evaluación ${avaliacion.avaliacionId}`);
           }
+        } else {
+          console.log(`La evaluación ${avaliacion.avaliacionId} no tiene nota final calculada`);
         }
       });
       
       // Si no hay evaluaciones con notas, devolver null
       if (porcentajeTotal === 0) {
+        console.log(`No hay evaluaciones con porcentajes para alumno ${alumnoId}`);
         return null;
       }
       
       // Normalizar por el porcentaje total (por si no suma 100)
-      return porcentajeTotal > 0 ? notaFinal / (porcentajeTotal / 100) : null;
+      const notaCalculada = porcentajeTotal > 0 ? notaFinal / (porcentajeTotal / 100) : null;
+      console.log(`Nota final calculada para alumno ${alumnoId}: ${notaCalculada}`);
+      return notaCalculada;
     } catch (error) {
       console.error(`Error al calcular nota media para alumno ${alumnoId}:`, error);
       return null;
