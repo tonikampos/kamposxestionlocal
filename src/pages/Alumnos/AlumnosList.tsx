@@ -123,7 +123,8 @@ const AlumnosList: React.FC<AlumnosListProps> = ({ onEditAlumno }) => {
         />
       </div>
       
-      <div className="overflow-x-auto">
+      {/* Vista de tabla para pantallas medianas y grandes */}
+      <div className="hidden md:block overflow-x-auto">
         <table className="min-w-full bg-white">
           <thead className="bg-gray-100">
             <tr>
@@ -195,6 +196,71 @@ const AlumnosList: React.FC<AlumnosListProps> = ({ onEditAlumno }) => {
             )}
           </tbody>
         </table>
+      </div>
+      
+      {/* Vista de tarjetas para móviles */}
+      <div className="md:hidden">
+        {filteredAlumnos.length > 0 ? (
+          <div className="space-y-4">
+            {filteredAlumnos.map(alumno => (
+              <div 
+                key={alumno.id} 
+                className={`border rounded-lg p-4 shadow-sm ${!matriculadosMap[alumno.id] ? 'bg-red-50 border-red-200' : 'bg-white'}`}
+              >
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="font-medium">{alumno.nome} {alumno.apelidos}</h3>
+                    <div className="text-sm text-gray-600 mt-1">
+                      <p>{alumno.email}</p>
+                      <p>Tel: {alumno.telefono || 'Non dispoñible'}</p>
+                    </div>
+                  </div>
+                  <div>
+                    {matriculadosMap[alumno.id] ? (
+                      <span className="bg-green-100 text-green-800 py-1 px-2 rounded-full text-xs font-medium">
+                        Matriculado
+                      </span>
+                    ) : (
+                      <span className="bg-red-100 text-red-800 py-1 px-2 rounded-full text-xs font-medium">
+                        Non matriculado
+                      </span>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="mt-3 pt-3 border-t border-gray-200 flex justify-end space-x-2">
+                  <button 
+                    onClick={() => onEditAlumno(alumno)}
+                    className="text-blue-600 hover:text-blue-800 text-sm py-1 px-2 border border-blue-600 rounded"
+                  >
+                    Editar
+                  </button>
+                  {matriculadosMap[alumno.id] ? (
+                    <button 
+                      onClick={() => irANotas(alumno)}
+                      className="text-green-600 hover:text-green-800 text-sm py-1 px-2 border border-green-600 rounded"
+                    >
+                      Ver notas
+                    </button>
+                  ) : (
+                    <button 
+                      onClick={() => handleDeleteAlumno(alumno.id)}
+                      className="text-red-600 hover:text-red-800 text-sm py-1 px-2 border border-red-600 rounded"
+                    >
+                      Eliminar
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="py-6 text-center text-gray-500">
+            {searchTerm.trim() 
+              ? 'Non se atoparon alumnos que coincidan coa busca.' 
+              : 'Non hai alumnos rexistrados. Engade alumnos para que aparezan aquí.'}
+          </div>
+        )}
       </div>
       
       <div className="mt-4 text-sm text-gray-500">
