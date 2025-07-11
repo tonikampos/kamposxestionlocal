@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { storageManager } from '../../utils/storageManager';
+import { dataManager } from '../../utils/dataManager';
 import type { Asignatura, Alumno } from '../../utils/storageManager';
 
 const MatriculasAsignatura: React.FC = () => {
@@ -38,7 +38,7 @@ const MatriculasAsignatura: React.FC = () => {
       setLoading(true);
       try {
         // Cargar asignatura
-        const asignaturaData = storageManager.getAsignaturaById(id);
+        const asignaturaData = await dataManager.getAsignaturaById(id);
         if (!asignaturaData) {
           alert('A asignatura non existe');
           navigate('/asignaturas');
@@ -54,16 +54,28 @@ const MatriculasAsignatura: React.FC = () => {
 
         setAsignatura(asignaturaData);
 
-        // Cargar alumnos matriculados
-        const matriculados = storageManager.getAlumnosMatriculadosEnAsignatura(id);
-        setAlumnosMatriculados(matriculados);
+        // Cargar alumnos matriculados y sus matrículas
+        const matriculas = await dataManager.getMatriculasByAsignatura(id);
+        const alumnosIds = matriculas.map(m => m.alumnoId);
+        
+        // Cargar detalles de los alumnos matriculados
+        const alumnosMatr: Alumno[] = [];
+        for (const alumnoId of alumnosIds) {
+          const alumno = await dataManager.getAlumnoById(alumnoId);
+          if (alumno) {
+            alumnosMatr.push(alumno);
+          }
+        }
+        setAlumnosMatriculados(alumnosMatr);
 
-        // Cargar alumnos disponibles (alumnos del profesor que no están matriculados)
-        const todosAlumnos = storageManager.getAlumnosByProfesor(currentUser.id);
-        const matriculaIds = matriculados.map(a => a.id);
+        // Cargar todos los alumnos del profesor
+        const todosAlumnos = await dataManager.getAlumnosByProfesor(currentUser.id);
+        
+        // Filtrar los que no están matriculados
         const disponibles = todosAlumnos.filter(
-          alumno => !matriculaIds.includes(alumno.id)
+          alumno => !alumnosIds.includes(alumno.id)
         );
+        
         setAlumnosDisponibles(disponibles);
         setSearchResults(disponibles); // Inicialmente los resultados son todos los disponibles
       } catch (error) {
@@ -94,11 +106,11 @@ const MatriculasAsignatura: React.FC = () => {
     setSearchResults(filtrados);
   }, [searchTerm, alumnosDisponibles]);
 
-  const handleMatricular = (alumnoId: string) => {
+  const handleMatricular = async (alumnoId: string) => {
     try {
       if (!id) return;
 
-      storageManager.matricularAlumno(alumnoId, id);
+      await dataManager.matricularAlumno(alumnoId, id);
       
       // Actualizar listas
       const alumnoMatriculado = alumnosDisponibles.find(a => a.id === alumnoId);
@@ -112,12 +124,15 @@ const MatriculasAsignatura: React.FC = () => {
     }
   };
 
-  const handleEliminarMatricula = (alumnoId: string) => {
+  const handleEliminarMatricula = async (alumnoId: string) => {
     try {
       if (!id) return;
 
       if (window.confirm('¿Está seguro de que quere eliminar a matrícula deste alumno? Tamén se eliminarán todas as notas do alumno nesta asignatura.')) {
-        storageManager.eliminarMatricula(alumnoId, id);
+        await dataManager.eliminarMatricula(alumnoId, id);
+        
+        // Eliminar también las notas asociadas
+        await dataManager.eliminarNotasAlumnoAsignatura(alumnoId, id);
         
         // Actualizar listas
         const alumnoDesmatriculado = alumnosMatriculados.find(a => a.id === alumnoId);

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { storageManager, NIVEL_EDUCATIVO } from '../../utils/storageManager';
+import { NIVEL_EDUCATIVO } from '../../utils/storageManager';
+import { dataManager } from '../../utils/dataManager';
 import type { Asignatura } from '../../utils/storageManager';
 
 const AsignaturasList = () => {
@@ -18,18 +19,19 @@ const AsignaturasList = () => {
     }
   }, [currentUser]);
 
-  const loadAsignaturas = () => {
+  const loadAsignaturas = async () => {
     setLoading(true);
     try {
-      const asignaturasProfesor = storageManager.getAsignaturasByProfesor(currentUser!.id);
+      const asignaturasProfesor = await dataManager.getAsignaturasByProfesor(currentUser!.id);
       setAsignaturas(asignaturasProfesor);
       
       // Cargar información de matrículas para cada asignatura
       const matriculasInfo: Record<string, number> = {};
-      asignaturasProfesor.forEach(asignatura => {
-        const alumnosMatriculados = storageManager.getAlumnosMatriculadosEnAsignatura(asignatura.id);
-        matriculasInfo[asignatura.id] = alumnosMatriculados.length;
-      });
+      
+      for (const asignatura of asignaturasProfesor) {
+        const matriculas = await dataManager.getMatriculasByAsignatura(asignatura.id);
+        matriculasInfo[asignatura.id] = matriculas.length;
+      }
       
       setAsignaturasConMatriculas(matriculasInfo);
     } catch (error) {
@@ -40,10 +42,10 @@ const AsignaturasList = () => {
     }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (window.confirm('¿Está seguro de que quere eliminar esta asignatura?')) {
       try {
-        storageManager.deleteAsignatura(id);
+        await dataManager.deleteAsignatura(id);
         loadAsignaturas(); // Recargar la lista
         alert('Asignatura eliminada con éxito');
       } catch (error) {

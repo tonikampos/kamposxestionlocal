@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { storageManager } from '../../utils/storageManager';
+import { dataManager } from '../../utils/dataManager';
 import type { 
   Alumno, 
   Asignatura, 
@@ -28,11 +28,11 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
   useEffect(() => {
     if (!asignaturaId || !alumno) return;
     
-    const cargarDatos = () => {
+    const cargarDatos = async () => {
       setLoading(true);
       try {
         // Cargar asignatura
-        const asignaturaData = storageManager.getAsignaturaById(asignaturaId);
+        const asignaturaData = await dataManager.getAsignaturaById(asignaturaId);
         if (!asignaturaData || !asignaturaData.configuracionAvaliacion) {
           alert('A asignatura non existe ou non ten configuración de avaliación');
           if (onClose) onClose();
@@ -41,16 +41,11 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
         setAsignatura(asignaturaData);
         
         // Inicializar o cargar notas del alumno
-        let nota = storageManager.getNotaAlumno(alumno.id, asignaturaId);
+        let nota = await dataManager.getNotaAlumno(alumno.id, asignaturaId);
         
         if (!nota) {
           // Si no existe nota, inicializarla
-          nota = storageManager.initNotaAlumno(alumno.id, asignaturaId);
-        } else {
-          // Si existe, asegurarnos de que tiene todas las evaluaciones y pruebas actualizadas
-          storageManager.updateNotaAlumno(nota);
-          // Recargar la nota actualizada
-          nota = storageManager.getNotaAlumno(alumno.id, asignaturaId)!;
+          nota = await dataManager.initNotaAlumno(alumno.id, asignaturaId);
         }
         
         setNotaAlumno(nota);
@@ -131,7 +126,6 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
       console.log("ID Alumno:", alumno.id, "Nome:", alumno.nome, "Apelidos:", alumno.apelidos);
       console.log("ID Asignatura:", asignaturaId);
       console.log("ID Nota:", notaAlumno.id);
-      console.log("Datos a gardar:", JSON.stringify(notaAlumno, null, 2));
       
       // Verificar que temos todalas avaliacións antes de gardar
       if (asignatura?.configuracionAvaliacion?.avaliaciois.length !== notaAlumno.notasAvaliaciois.length) {
@@ -139,17 +133,10 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
       }
       
       // Gardar directamente as notas completas tal como están no estado
-      // Isto garda todas as avaliacións do alumno actual
-      storageManager.updateNotaAlumno(notaAlumno);
-      
-      // Para verificar que as notas se gardaron correctamente, comprobar que existen as notas despois de gardar
-      const todasAsNotas = storageManager.getNotas();
-      const notasDeAlumno = todasAsNotas.filter(n => n.alumnoId === alumno.id);
-      console.log(`Total de notas almacenadas: ${todasAsNotas.length}`);
-      console.log(`Notas do alumno actual: ${notasDeAlumno.length}`);
+      await dataManager.updateNotaAlumno(notaAlumno);
       
       // Recargar las notas para obtener los cálculos actualizados
-      const notaActualizada = storageManager.getNotaAlumno(alumno.id, asignaturaId);
+      const notaActualizada = await dataManager.getNotaAlumno(alumno.id, asignaturaId);
       
       // Comprobar si se han perdido datos
       if (!notaActualizada) {
@@ -158,8 +145,6 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
       }
       
       setNotaAlumno(notaActualizada);
-      
-      console.log("Notas actualizadas despois de gardar:", JSON.stringify(notaActualizada, null, 2));
       
       // Mostrar mensaje con los cálculos realizados
       let mensaje = 'Notas gardadas correctamente.\n\n';

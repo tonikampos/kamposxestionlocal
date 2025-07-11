@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { storageManager } from '../../utils/storageManager';
+import { dataManager } from '../../utils/dataManager';
 import type { Asignatura } from '../../utils/storageManager';
 
 interface NotasAsignaturasSelectorProps {
@@ -27,11 +27,11 @@ const NotasAsignaturasSelector: React.FC<NotasAsignaturasSelectorProps> = ({
     cargarAsignaturas();
   }, [currentUser, navigate]);
 
-  const cargarAsignaturas = () => {
+  const cargarAsignaturas = async () => {
     setLoading(true);
     try {
       if (currentUser) {
-        const asignaturasFromStorage = storageManager.getAsignaturasByProfesor(currentUser.id);
+        const asignaturasFromStorage = await dataManager.getAsignaturasByProfesor(currentUser.id);
         
         // Filtrar asignaturas que tienen configuración de evaluación
         const asignaturasConConfig = asignaturasFromStorage.filter(a => a.configuracionAvaliacion);

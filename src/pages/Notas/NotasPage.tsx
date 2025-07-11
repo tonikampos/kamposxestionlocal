@@ -3,7 +3,7 @@ import NotasAsignaturasSelector from './NotasAsignaturasSelector';
 import NotasAlumnosList from './NotasAlumnosList';
 import NotasForm from './NotasForm';
 import { useAuth } from '../../context/AuthContext';
-import { storageManager } from '../../utils/storageManager';
+import { dataManager } from '../../utils/dataManager';
 import type { Alumno } from '../../utils/storageManager';
 
 const NotasPage = () => {
@@ -16,24 +16,28 @@ const NotasPage = () => {
   useEffect(() => {
     const alumnoId = sessionStorage.getItem('alumnoSeleccionadoId');
     if (alumnoId && currentUser) {
-      try {
-        // Buscar el alumno por su ID
-        const alumno = storageManager.getAlumnoById(alumnoId);
-        if (alumno) {
-          setSelectedAlumno(alumno);
-          
-          // Buscar las matrículas del alumno para seleccionar la primera asignatura
-          const matriculas = storageManager.getMatriculasByAlumno(alumnoId);
-          if (matriculas.length > 0) {
-            setSelectedAsignaturaId(matriculas[0].asignaturaId);
+      const loadAlumno = async () => {
+        try {
+          // Buscar el alumno por su ID
+          const alumno = await dataManager.getAlumnoById(alumnoId);
+          if (alumno) {
+            setSelectedAlumno(alumno);
+            
+            // Buscar las matrículas del alumno para seleccionar la primera asignatura
+            const matriculas = await dataManager.getMatriculasByAlumno(alumnoId);
+            if (matriculas.length > 0) {
+              setSelectedAsignaturaId(matriculas[0].asignaturaId);
+            }
+            
+            // Limpiar el sessionStorage para no cargar este alumno en futuras visitas
+            sessionStorage.removeItem('alumnoSeleccionadoId');
           }
-          
-          // Limpiar el sessionStorage para no cargar este alumno en futuras visitas
-          sessionStorage.removeItem('alumnoSeleccionadoId');
+        } catch (error) {
+          console.error('Error al cargar el alumno seleccionado:', error);
         }
-      } catch (error) {
-        console.error('Error al cargar el alumno seleccionado:', error);
-      }
+      };
+      
+      loadAlumno();
     }
   }, [currentUser]);
 

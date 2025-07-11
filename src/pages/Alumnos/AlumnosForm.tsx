@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { storageManager } from '../../utils/storageManager';
+import { dataManager } from '../../utils/dataManager';
 import type { Alumno } from '../../utils/storageManager';
 
 interface AlumnosFormProps {
@@ -49,7 +49,7 @@ const AlumnosForm: React.FC<AlumnosFormProps> = ({ alumno, onSave, onCancel }) =
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!validateForm() || !currentUser) {
@@ -58,20 +58,17 @@ const AlumnosForm: React.FC<AlumnosFormProps> = ({ alumno, onSave, onCancel }) =
 
     try {
       if (isEditMode && alumno) {
-        storageManager.updateAlumno({
+        await dataManager.updateAlumno({
           ...alumno,
           ...formData,
         });
       } else {
-        storageManager.addAlumno({
-          id: '', // Will be set by storage manager
+        await dataManager.addAlumno({
           profesorId: currentUser.id,
           nome: formData.nome.trim(),
           apelidos: formData.apelidos.trim(),
           email: formData.email.trim(),
           telefono: formData.telefono.trim() || undefined,
-          createdAt: '', // Will be set by storage manager
-          updatedAt: '', // Will be set by storage manager
         });
       }
       onSave();

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { storageManager, NIVEL_EDUCATIVO } from '../../utils/storageManager';
+import { NIVEL_EDUCATIVO } from '../../utils/storageManager';
+import { dataManager } from '../../utils/dataManager';
 import type { Asignatura, NivelEducativo } from '../../utils/storageManager';
 
 const AsignaturasForm = () => {
@@ -27,34 +28,37 @@ const AsignaturasForm = () => {
   useEffect(() => {
     if (isEditing && id && currentUser?.id) {
       setLoading(true);
-      try {
-        const asignatura = storageManager.getAsignaturaById(id);
-        if (asignatura) {
-          // Verificar que la asignatura pertenece al profesor actual
-          if (asignatura.profesorId !== currentUser.id) {
-            setError('Non ten permisos para editar esta asignatura');
+      const loadAsignatura = async () => {
+        try {
+          const asignatura = await dataManager.getAsignaturaById(id);
+          if (asignatura) {
+            // Verificar que la asignatura pertenece al profesor actual
+            if (asignatura.profesorId !== currentUser.id) {
+              setError('Non ten permisos para editar esta asignatura');
+              navigate('/asignaturas');
+              return;
+            }
+            
+            setFormData({
+              profesorId: asignatura.profesorId,
+              nome: asignatura.nome,
+              nivel: asignatura.nivel,
+              curso: asignatura.curso || 1, // Usar el valor existente o predeterminado
+              sesionsSemanais: asignatura.sesionsSemanais,
+              numeroAvaliaciois: asignatura.numeroAvaliaciois
+            });
+          } else {
+            setError('Non se atopou a asignatura solicitada');
             navigate('/asignaturas');
-            return;
           }
-          
-          setFormData({
-            profesorId: asignatura.profesorId,
-            nome: asignatura.nome,
-            nivel: asignatura.nivel,
-            curso: asignatura.curso || 1, // Usar el valor existente o predeterminado
-            sesionsSemanais: asignatura.sesionsSemanais,
-            numeroAvaliaciois: asignatura.numeroAvaliaciois
-          });
-        } else {
-          setError('Non se atopou a asignatura solicitada');
-          navigate('/asignaturas');
+        } catch (err) {
+          console.error('Error al cargar asignatura:', err);
+          setError('Ocorreu un erro ao cargar a información da asignatura');
+        } finally {
+          setLoading(false);
         }
-      } catch (err) {
-        console.error('Error al cargar asignatura:', err);
-        setError('Ocorreu un erro ao cargar a información da asignatura');
-      } finally {
-        setLoading(false);
-      }
+      };
+      loadAsignatura();
     }
   }, [id, isEditing, currentUser, navigate]);
 
@@ -92,32 +96,27 @@ const AsignaturasForm = () => {
 
       if (isEditing && id) {
         // Obtener la asignatura original para mantener ID y fechas
-        const originalAsignatura = storageManager.getAsignaturaById(id);
+        const originalAsignatura = await dataManager.getAsignaturaById(id);
         if (originalAsignatura) {
           const updatedAsignatura: Asignatura = {
+            ...originalAsignatura,
             ...asignaturaData,
-            id: originalAsignatura.id,
-            createdAt: originalAsignatura.createdAt,
             updatedAt: new Date().toISOString()
           };
-          storageManager.updateAsignatura(updatedAsignatura);
+          await dataManager.updateAsignatura(updatedAsignatura);
           alert('Asignatura actualizada con éxito');
+        } else {
+          setError('Non se puido actualizar a asignatura');
+          return;
         }
       } else {
         // Crear nueva asignatura
-        const newAsignatura: Asignatura = {
-          ...asignaturaData,
-          id: '', // Se generará en addAsignatura
-          createdAt: '', // Se generará en addAsignatura
-          updatedAt: '' // Se generará en addAsignatura
-        };
-        storageManager.addAsignatura(newAsignatura);
-        alert('Asignatura rexistrada con éxito');
+        await dataManager.addAsignatura(asignaturaData);
+        alert('Asignatura engadida con éxito');
       }
-      
+
       // Redirigir a la lista de asignaturas
       navigate('/asignaturas');
-      
     } catch (err) {
       console.error('Error al guardar asignatura:', err);
       setError('Ocorreu un erro ao gardar a asignatura');

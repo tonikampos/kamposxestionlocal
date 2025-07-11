@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { storageManager } from '../../utils/storageManager';
+import { dataManager } from '../../utils/dataManager';
 import type { 
   Asignatura, 
   ConfiguracionAvaliacion, 
@@ -20,6 +20,53 @@ const ConfiguracionAvaliacionPage = () => {
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
+  // Función para crear una configuración de evaluación predeterminada
+  const createDefaultConfiguracionAvaliacion = (asignatura: Asignatura): ConfiguracionAvaliacion => {
+    const avaliaciois: Avaliacion[] = [];
+    const numeroAvaliaciois = asignatura.numeroAvaliaciois || 3;
+    
+    // Calcular el porcentaje equitativo para cada evaluación
+    const porcentajePorAval = 100 / numeroAvaliaciois;
+    
+    for (let i = 1; i <= numeroAvaliaciois; i++) {
+      const avalId = `aval_${i}_${Date.now() + i}`;
+      
+      // Crear pruebas predeterminadas
+      const probas: Proba[] = [
+        {
+          id: `proba_examen_${avalId}`,
+          nome: 'Exame',
+          descripcion: 'Exame escrito',
+          porcentaxe: 70
+        },
+        {
+          id: `proba_traballos_${avalId}`,
+          nome: 'Traballos',
+          descripcion: 'Traballos e tarefas',
+          porcentaxe: 20
+        },
+        {
+          id: `proba_actitude_${avalId}`,
+          nome: 'Actitude',
+          descripcion: 'Comportamento e participación',
+          porcentaxe: 10
+        }
+      ];
+      
+      avaliaciois.push({
+        id: avalId,
+        numero: i,
+        porcentaxeNota: porcentajePorAval,
+        probas
+      });
+    }
+    
+    return {
+      asignaturaId: asignatura.id,
+      avaliaciois
+    };
+  };
+
   // Cargar la asignatura y su configuración
   useEffect(() => {
     const loadAsignatura = async () => {
@@ -27,7 +74,7 @@ const ConfiguracionAvaliacionPage = () => {
       
       setLoading(true);
       try {
-        const asig = storageManager.getAsignaturaById(asignaturaId);
+        const asig = await dataManager.getAsignaturaById(asignaturaId);
         
         if (!asig) {
           setError('Non se atopou a asignatura solicitada');
@@ -42,12 +89,12 @@ const ConfiguracionAvaliacionPage = () => {
         
         setAsignatura(asig);
         
-        // Cargar o crear configuración
+        // Usar configuración existente o crear una predeterminada
         let config = asig.configuracionAvaliacion;
         
         if (!config) {
           // Si no existe configuración, crear una predeterminada
-          config = storageManager.createDefaultConfiguracionAvaliacion(asig);
+          config = createDefaultConfiguracionAvaliacion(asig);
         }
         
         setConfiguracion(config);
@@ -225,8 +272,14 @@ const ConfiguracionAvaliacionPage = () => {
         }
       }
       
-      // Guardar la configuración
-      storageManager.saveConfiguracionAvaliacion(asignatura.id, configuracion);
+      // Guardar la configuración actualizando la asignatura
+      const asignaturaActualizada = {
+        ...asignatura,
+        configuracionAvaliacion: configuracion,
+        updatedAt: new Date().toISOString()
+      };
+      
+      await dataManager.updateAsignatura(asignaturaActualizada);
       
       setSuccessMessage('Configuración gardada con éxito');
       setTimeout(() => setSuccessMessage(''), 3000);

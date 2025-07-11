@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { storageManager } from '../../utils/storageManager';
+import { dataManager } from '../../utils/dataManager';
 import type { Alumno } from '../../utils/storageManager';
 import { useNavigate } from 'react-router-dom';
 
@@ -29,19 +29,20 @@ const AlumnosList: React.FC<AlumnosListProps> = ({ onEditAlumno }) => {
     filterAlumnos();
   }, [searchTerm, alumnos]);
 
-  const loadAlumnos = () => {
+  const loadAlumnos = async () => {
     setIsLoading(true);
     try {
       if (currentUser) {
-        const alumnosFromStorage = storageManager.getAlumnosByProfesor(currentUser.id);
+        // Usamos dataManager que trabaja con Firebase
+        const alumnosFromStorage = await dataManager.getAlumnosByProfesor(currentUser.id);
         setAlumnos(alumnosFromStorage);
         
         // Verificar qué alumnos están matriculados en alguna asignatura
         const matriculados: Record<string, boolean> = {};
-        alumnosFromStorage.forEach(alumno => {
-          const matriculasAlumno = storageManager.getMatriculasByAlumno(alumno.id);
+        for (const alumno of alumnosFromStorage) {
+          const matriculasAlumno = await dataManager.getMatriculasByAlumno(alumno.id);
           matriculados[alumno.id] = matriculasAlumno.length > 0;
-        });
+        }
         setMatriculadosMap(matriculados);
       } else {
         setAlumnos([]);
@@ -75,7 +76,7 @@ const AlumnosList: React.FC<AlumnosListProps> = ({ onEditAlumno }) => {
     setSearchTerm(e.target.value);
   };
 
-  const handleDeleteAlumno = (id: string) => {
+  const handleDeleteAlumno = async (id: string) => {
     // Verificar si el alumno está matriculado
     if (matriculadosMap[id]) {
       alert('Non se pode eliminar un alumno que está matriculado en algunha asignatura');
@@ -84,7 +85,7 @@ const AlumnosList: React.FC<AlumnosListProps> = ({ onEditAlumno }) => {
 
     if (window.confirm('¿Estás seguro de que queres eliminar este alumno?')) {
       try {
-        storageManager.deleteAlumno(id);
+        await dataManager.deleteAlumno(id);
         loadAlumnos(); // Recargar la lista
       } catch (error) {
         console.error('Error al eliminar alumno:', error);

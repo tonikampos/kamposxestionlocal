@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { storageManager } from '../../utils/storageManager';
+import { dataManager } from '../../utils/dataManager';
 import type { Asignatura, Alumno, NotaAlumno, NotaAvaliacion, Avaliacion } from '../../utils/storageManager';
 
 interface NotasAlumnosListProps {
@@ -33,7 +33,7 @@ const NotasAlumnosList: React.FC<NotasAlumnosListProps> = ({
       console.log("Cargando datos de alumnos para asignatura:", asignaturaId);
       
       // Obtener datos de la asignatura
-      const asignaturaData = storageManager.getAsignaturaById(asignaturaId);
+      const asignaturaData = await dataManager.getAsignaturaById(asignaturaId);
       if (!asignaturaData) {
         throw new Error('No se encontró la asignatura');
       }
@@ -48,23 +48,33 @@ const NotasAlumnosList: React.FC<NotasAlumnosListProps> = ({
       }
       setAvaliacionsMap(avalMap);
       
-      // Obtener alumnos matriculados en la asignatura
-      const alumnosMatriculados = storageManager.getAlumnosMatriculadosEnAsignatura(asignaturaId);
-      console.log("Alumnos matriculados:", alumnosMatriculados.length);
-      setAlumnos(alumnosMatriculados);
+      // Obtener matrículas de la asignatura
+      const matriculas = await dataManager.getMatriculasByAsignatura(asignaturaId);
       
-      // Obtener las notas de los alumnos
+      // Cargar datos de los alumnos
+      const alumnosData: Alumno[] = [];
       const notasAlumnos: Record<string, NotaAlumno> = {};
-      alumnosMatriculados.forEach((alumno: Alumno) => {
+      
+      for (const matricula of matriculas) {
         try {
-          const notaAlumno = storageManager.getNotaAlumno(alumno.id, asignaturaId);
-          if (notaAlumno) {
-            notasAlumnos[alumno.id] = notaAlumno;
+          // Obtener datos del alumno
+          const alumno = await dataManager.getAlumnoById(matricula.alumnoId);
+          if (alumno) {
+            alumnosData.push(alumno);
+            
+            // Obtener notas del alumno
+            const notaAlumno = await dataManager.getNotaAlumno(alumno.id, asignaturaId);
+            if (notaAlumno) {
+              notasAlumnos[alumno.id] = notaAlumno;
+            }
           }
         } catch (error) {
-          console.error(`Error al obtener nota del alumno ${alumno.id}:`, error);
+          console.error(`Error al procesar alumno ${matricula.alumnoId}:`, error);
         }
-      });
+      }
+      
+      console.log("Alumnos matriculados:", alumnosData.length);
+      setAlumnos(alumnosData);
       
       console.log("Notas de alumnos cargadas:", Object.keys(notasAlumnos).length);
       setNotas(notasAlumnos);
