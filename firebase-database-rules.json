@@ -1,0 +1,19 @@
+{
+  "rules": {
+    ".read": "auth != null",
+    ".write": "auth != null",
+    
+    "matriculas": {
+      ".indexOn": ["alumnoId", "asignaturaId"]
+    },
+    "alumnos": {
+      ".indexOn": ["profesorId"]
+    },
+    "asignaturas": {
+      ".indexOn": ["profesorId"]
+    },
+    "notas": {
+      ".indexOn": ["alumnoId", "asignaturaId"]
+    }
+  }
+}

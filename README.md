@@ -1,6 +1,10 @@
 # Kampos Xestión
 
-Aplicación para xestionar ## Estrutura do proxecto
+Aplicación para xestión de alumnos, asignaturas, matrículas e notas con Firebase Realtime Database.
+
+⚠️ **IMPORTANTE:** Para el correcto funcionamiento de la aplicación, es necesario configurar los índices en Firebase Realtime Database. Ver el archivo [CONFIGURACION_FIREBASE_DATABASE.md](./CONFIGURACION_FIREBASE_DATABASE.md) para instrucciones detalladas.
+
+## Estrutura do proxecto
 
 - `src/components/`: Componentes reutilizables como Navbar e rutas protexidas
 - `src/pages/`: Páxinas da aplicación organizadas por módulos
