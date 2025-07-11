@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable'; // Volvemos a activar autoTable ahora que sabemos que funciona
-import { useAuth } from '../../context/AuthContext';
-import { storageManager } from '../../utils/storageManager';
-import type { Alumno, Asignatura, NotaAlumno, Avaliacion } from '../../utils/storageManager';
+import { useRealtimeAuth } from '../../firebase/RealtimeAuthContext';
+import { dataManager } from '../../utils/dataManager';
+import type { Alumno, Asignatura, NotaAlumno, Avaliacion, NotaAvaliacion } from '../../utils/storageManager';
 
 // Ampliar la definición de jsPDF para TypeScript
 declare module 'jspdf' {
@@ -12,8 +12,53 @@ declare module 'jspdf' {
   }
 }
 
+// Componente para seleccionar alumnos de una asignatura
+interface AlumnosAsignaturaSelectorProps {
+  asignaturaId: string;
+  onSelect: (alumnoId: string) => void;
+}
+
+const AlumnosAsignaturaSelector: React.FC<AlumnosAsignaturaSelectorProps> = ({ asignaturaId, onSelect }) => {
+  const [alumnosMatriculados, setAlumnosMatriculados] = useState<Alumno[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchAlumnos = async () => {
+      setLoading(true);
+      try {
+        const alumnos = await dataManager.getAlumnosByAsignatura(asignaturaId);
+        setAlumnosMatriculados(alumnos);
+      } catch (error) {
+        console.error('Error al obtener alumnos matriculados:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAlumnos();
+  }, [asignaturaId]);
+
+  if (loading) {
+    return <option disabled>Cargando alumnos...</option>;
+  }
+
+  if (alumnosMatriculados.length === 0) {
+    return <option disabled>Non hai alumnos matriculados</option>;
+  }
+
+  return (
+    <>
+      {alumnosMatriculados.map(alumno => (
+        <option key={alumno.id} value={alumno.id}>
+          {alumno.nome} {alumno.apelidos}
+        </option>
+      ))}
+    </>
+  );
+};
+
 const InformesPage = () => {
-  const { currentUser } = useAuth();
+  const { currentUser } = useRealtimeAuth();
   const [selectedReport, setSelectedReport] = useState('alumnos');
   const [loading, setLoading] = useState(false);
   const [alumnos, setAlumnos] = useState<Alumno[]>([]);
@@ -33,19 +78,27 @@ const InformesPage = () => {
   
   // Cargar datos cuando se monta el componente
   useEffect(() => {
-    if (currentUser) {
-      // Cargar alumnos del profesor actual
-      const alumnosProfesor = storageManager.getAlumnosByProfesor(currentUser.id);
-      setAlumnos(alumnosProfesor);
-      
-      // Cargar asignaturas del profesor actual
-      const asignaturasProfesor = storageManager.getAsignaturasByProfesor(currentUser.id);
-      setAsignaturas(asignaturasProfesor);
-    }
+    const cargarDatos = async () => {
+      if (currentUser) {
+        try {
+          // Cargar alumnos del profesor actual
+          const alumnosProfesor = await dataManager.getAlumnosByProfesor(currentUser.id);
+          setAlumnos(alumnosProfesor);
+          
+          // Cargar asignaturas del profesor actual
+          const asignaturasProfesor = await dataManager.getAsignaturasByProfesor(currentUser.id);
+          setAsignaturas(asignaturasProfesor);
+        } catch (error) {
+          console.error("Error al cargar datos para informes:", error);
+        }
+      }
+    };
+    
+    cargarDatos();
   }, [currentUser]);
   
   // Opciones para generar el PDF según el tipo de informe
-  const handleGenerateReport = () => {
+  const handleGenerateReport = async () => {
     setLoading(true);
     try {
       console.log('Generando informe tipo:', selectedReport);
@@ -53,19 +106,19 @@ const InformesPage = () => {
       switch (selectedReport) {
         case 'alumnos':
           console.log('Generando informe de alumnos...');
-          generateAlumnosReport();
+          await generateAlumnosReport();
           break;
         case 'asignaturas':
           console.log('Generando informe de asignaturas...');
-          generateAsignaturasReport();
+          await generateAsignaturasReport();
           break;
         case 'notas':
           if (selectedAsignatura && selectedAlumno) {
             console.log('Generando informe individual de notas...');
-            generateNotasIndividualReport();
+            await generateNotasIndividualReport();
           } else if (selectedAsignatura) {
             console.log('Generando informe de notas por asignatura...');
-            generateNotasAsignaturaReport();
+            await generateNotasAsignaturaReport();
           } else {
             alert('Debe seleccionar unha asignatura');
           }
@@ -84,7 +137,7 @@ const InformesPage = () => {
   };
 
   // Funcións para xerar os diferentes tipos de informes en PDF
-  const generateAlumnosReport = () => {
+  const generateAlumnosReport = async () => {
     try {
       console.log("Iniciando generación de informe de alumnos...");
       
@@ -93,8 +146,8 @@ const InformesPage = () => {
         return;
       }
       
-      // Filtrar alumnos del profesor actual
-      const alumnosDelProfesor = [...alumnos];
+      // Cargar alumnos del profesor actual de forma asíncrona
+      const alumnosDelProfesor = await dataManager.getAlumnosByProfesor(currentUser.id);
       console.log(`Número de alumnos encontrados: ${alumnosDelProfesor.length}`);
       
       // Ordenar según el criterio seleccionado
@@ -178,7 +231,7 @@ const InformesPage = () => {
   };
   
   // Función para generar informe de asignaturas
-  const generateAsignaturasReport = () => {
+  const generateAsignaturasReport = async () => {
     try {
       console.log("Iniciando generación de informe de asignaturas...");
       
@@ -187,10 +240,10 @@ const InformesPage = () => {
         return;
       }
       
-      // Obtener las asignaturas del profesor directamente del storageManager
+      // Obtener las asignaturas del profesor directamente de dataManager
       // en vez de usar el estado que podría estar vacío o desactualizado
-      const asignaturasDelProfesor = storageManager.getAsignaturasByProfesor(currentUser.id);
-      console.log(`Asignaturas iniciales obtenidas del storageManager: ${asignaturasDelProfesor.length}`, 
+      const asignaturasDelProfesor = await dataManager.getAsignaturasByProfesor(currentUser.id);
+      console.log(`Asignaturas iniciales obtenidas del dataManager: ${asignaturasDelProfesor.length}`, 
         asignaturasDelProfesor.map(a => ({ id: a.id, nombre: a.nome, nivel: a.nivel, curso: a.curso })));
       
       // Verificamos que tenemos el ID del profesor actual
@@ -312,7 +365,7 @@ const InformesPage = () => {
   };
 
   // Función para generar informe individual de notas de un alumno
-  const generateNotasIndividualReport = () => {
+  const generateNotasIndividualReport = async () => {
     try {
       console.log("Iniciando generación de informe individual de notas...");
       
@@ -321,8 +374,9 @@ const InformesPage = () => {
         return;
       }
       
-      const asignatura = asignaturas.find(a => a.id === selectedAsignatura);
-      const alumno = alumnos.find(a => a.id === selectedAlumno);
+      // Obtener datos actualizados de la asignatura y alumno
+      const asignatura = await dataManager.getAsignaturaById(selectedAsignatura);
+      const alumno = await dataManager.getAlumnoById(selectedAlumno);
       
       if (!asignatura || !alumno) {
         alert('Non se atopou a asignatura ou o alumno seleccionado');
@@ -332,7 +386,7 @@ const InformesPage = () => {
       
       console.log("Obteniendo notas del alumno...");
       // Obtener las notas del alumno para la asignatura seleccionada
-      const notasAlumno = storageManager.getNotaAlumno(selectedAlumno, selectedAsignatura);
+      const notasAlumno = await dataManager.getNotaAlumno(selectedAlumno, selectedAsignatura);
       
       if (!notasAlumno) {
         alert('O alumno non ten notas para esta asignatura');
@@ -424,7 +478,7 @@ const InformesPage = () => {
   };
 
   // Función para generar informe de notas de una asignatura (todos los alumnos)
-  const generateNotasAsignaturaReport = () => {
+  const generateNotasAsignaturaReport = async () => {
     try {
       console.log("Iniciando generación de informe de notas por asignatura...");
       
@@ -433,7 +487,8 @@ const InformesPage = () => {
         return;
       }
       
-      const asignatura = asignaturas.find(a => a.id === selectedAsignatura);
+      // Obtener datos actualizados de la asignatura
+      const asignatura = await dataManager.getAsignaturaById(selectedAsignatura);
       
       if (!asignatura) {
         alert('Non se atopou a asignatura seleccionada');
@@ -442,8 +497,8 @@ const InformesPage = () => {
       }
       
       console.log("Obteniendo alumnos matriculados...");
-      // Obtener alumnos matriculados en la asignatura
-      const alumnosMatriculados = storageManager.getAlumnosMatriculadosEnAsignatura(selectedAsignatura);
+      // Obtener alumnos matriculados
+      const alumnosMatriculados = await dataManager.getAlumnosByAsignatura(selectedAsignatura);
       
       if (alumnosMatriculados.length === 0) {
         alert('Non hai alumnos matriculados nesta asignatura');
@@ -452,7 +507,7 @@ const InformesPage = () => {
       }
       
       // Obtener todas las notas para la asignatura
-      const notasAsignatura = storageManager.getNotasAsignatura(selectedAsignatura);
+      const notasAsignatura = await dataManager.getNotasAsignatura(selectedAsignatura);
       
       console.log(`Número de alumnos matriculados: ${alumnosMatriculados.length}`);
       
@@ -477,8 +532,8 @@ const InformesPage = () => {
       const tableRows: string[][] = [];
       
       // Procesar las notas para cada alumno
-      alumnosMatriculados.forEach(alumno => {
-        const notaAlumno = notasAsignatura.find(n => n.alumnoId === alumno.id);
+      alumnosMatriculados.forEach((alumno: Alumno) => {
+        const notaAlumno = notasAsignatura.find((n: NotaAlumno) => n.alumnoId === alumno.id);
         
         if (notaAlumno) {
           if (selectedEvaluacion === 'final') {
@@ -494,7 +549,7 @@ const InformesPage = () => {
           } else {
             // Mostrar nota de la evaluación seleccionada
             const evalNum = parseInt(selectedEvaluacion);
-            const notaAval = notaAlumno.notasAvaliaciois.find(na => {
+            const notaAval = notaAlumno.notasAvaliaciois.find((na: NotaAvaliacion) => {
               const avaliacion = asignatura.configuracionAvaliacion?.avaliaciois.find(av => av.id === na.avaliacionId);
               return avaliacion?.numero === evalNum;
             });
@@ -829,11 +884,12 @@ const InformesPage = () => {
                   disabled={!selectedAsignatura}
                 >
                   <option value="">Todos os alumnos</option>
-                  {selectedAsignatura && storageManager.getAlumnosMatriculadosEnAsignatura(selectedAsignatura).map(alumno => (
-                    <option key={alumno.id} value={alumno.id}>
-                      {alumno.nome} {alumno.apelidos}
-                    </option>
-                  ))}
+                  {selectedAsignatura && (
+                    <AlumnosAsignaturaSelector 
+                      asignaturaId={selectedAsignatura} 
+                      onSelect={setSelectedAlumno} 
+                    />
+                  )}
                 </select>
               </div>
               

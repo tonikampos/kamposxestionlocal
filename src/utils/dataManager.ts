@@ -144,6 +144,37 @@ class DataManager {
     console.log('dataManager: obteniendo notas para la asignatura', asignaturaId);
     return realtimeDatabaseManager.getNotasAsignatura(asignaturaId);
   }
+
+  async getAlumnosByAsignatura(asignaturaId: string): Promise<Alumno[]> {
+    console.log('dataManager: obteniendo alumnos matriculados en asignatura', asignaturaId);
+    
+    try {
+      // Obtener las matrículas de la asignatura
+      const matriculas = await this.getMatriculasByAsignatura(asignaturaId);
+      
+      if (!matriculas || matriculas.length === 0) {
+        return [];
+      }
+      
+      // Para cada matrícula, obtener el alumno correspondiente
+      const alumnosPromises = matriculas.map(matricula => 
+        this.getAlumnoById(matricula.alumnoId)
+      );
+      
+      // Esperar a que se resuelvan todas las promesas
+      const alumnos = await Promise.all(alumnosPromises);
+      
+      // Filtrar los posibles nulos (alumnos que no existen)
+      return alumnos.filter((alumno): alumno is Alumno => alumno !== undefined);
+    } catch (error) {
+      console.error('Error al obtener alumnos por asignatura:', error);
+      return [];
+    }
+  }
+
+  async getAlumnosMatriculadosEnAsignatura(asignaturaId: string): Promise<Alumno[]> {
+    return this.getAlumnosByAsignatura(asignaturaId);
+  }
 }
 
 export const dataManager = new DataManager();
