@@ -188,14 +188,56 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
 
   return (
     <div className="bg-white rounded-lg shadow-lg p-6 max-w-5xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
-        <div>
+      <div className="mb-6">
+        <div className="flex justify-between items-center">
           <h2 className="text-xl font-bold">
             Notas de {alumno.nome} {alumno.apelidos}
           </h2>
-          <p className="text-gray-600 mt-1">
-            {asignatura.nome} - {asignatura.nivel} {asignatura.curso}º
-          </p>
+        </div>
+        <p className="text-gray-600 mt-1">
+          {asignatura.nome} - {asignatura.nivel} {asignatura.curso}º
+        </p>
+        
+        {/* Mostrar todas las notas de evaluaciones junto al nombre */}
+        <div className="mt-3 flex flex-wrap gap-2">
+          {notaAlumno.notasAvaliaciois.map((notaEval) => {
+            const avaliacion = asignatura.configuracionAvaliacion?.avaliaciois.find(
+              av => av.id === notaEval.avaliacionId
+            );
+            
+            if (!avaliacion) return null;
+            
+            let colorClass = "bg-gray-100 text-gray-800";
+            if (notaEval.notaFinal !== undefined) {
+              if (notaEval.notaFinal >= 9) {
+                colorClass = "bg-blue-100 text-blue-800";
+              } else if (notaEval.notaFinal >= 7) {
+                colorClass = "bg-green-100 text-green-800";
+              } else if (notaEval.notaFinal >= 5) {
+                colorClass = "bg-yellow-100 text-yellow-800";
+              } else {
+                colorClass = "bg-red-100 text-red-800";
+              }
+            }
+            
+            return (
+              <span key={notaEval.avaliacionId} 
+                className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-sm font-medium ${colorClass}`}>
+                {avaliacion.numero}ª Eval: {notaEval.notaFinal !== undefined ? notaEval.notaFinal.toFixed(2) : '—'}
+              </span>
+            );
+          })}
+          
+          {notaAlumno.notaFinal !== undefined && (
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-sm font-medium ${
+              notaAlumno.notaFinal >= 9 ? "bg-purple-100 text-purple-800" : 
+              notaAlumno.notaFinal >= 7 ? "bg-indigo-100 text-indigo-800" : 
+              notaAlumno.notaFinal >= 5 ? "bg-teal-100 text-teal-800" : 
+              "bg-pink-100 text-pink-800"
+            }`}>
+              Final: {notaAlumno.notaFinal.toFixed(2)}
+            </span>
+          )}
         </div>
       </div>
       
@@ -357,14 +399,23 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
                           step="0.01"
                           value={valor}
                           onChange={(e) => {
-                            const newValue = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                            let newValue = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                            // Asegurar que el valor esté entre 0 y 10
+                            newValue = Math.max(0, Math.min(10, newValue));
                             handleNotaChange(
                               activeAvaliacion.id, 
                               proba.id, 
                               newValue
                             );
                           }}
-                          className="border border-gray-300 rounded px-2 py-1 w-20 text-center mx-auto block"
+                          className={`border rounded px-2 py-1 w-20 text-center mx-auto block font-medium ${
+                            valor >= 9 ? 'border-blue-500 bg-blue-50 text-blue-700' : 
+                            valor >= 7 ? 'border-green-500 bg-green-50 text-green-700' : 
+                            valor >= 5 ? 'border-yellow-500 bg-yellow-50 text-yellow-700' : 
+                            'border-red-500 bg-red-50 text-red-700'
+                          }`}
+                          placeholder="0-10"
+                          title="Ingresa una nota entre 0 y 10"
                         />
                       </td>
                       <td className="px-4 py-3">

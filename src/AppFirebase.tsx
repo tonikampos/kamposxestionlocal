@@ -11,6 +11,7 @@ import CopiasPage from './pages/Copias/CopiasPage';
 import InformesPage from './pages/Informes/InformesPage';
 import NotasPage from './pages/Notas/NotasPage';
 import MigracionPage from './pages/MigracionPage';
+import EstadisticasPage from './pages/Estadisticas/EstadisticasPage';
 import { useEffect } from 'react';
 
 function AppContentFirebase() {
@@ -59,6 +60,11 @@ function AppContentFirebase() {
           <Route path="/migracion" element={
             <ProtectedRouteFirebase>
               <MigracionPage />
+            </ProtectedRouteFirebase>
+          } />
+          <Route path="/estadisticas" element={
+            <ProtectedRouteFirebase>
+              <EstadisticasPage />
             </ProtectedRouteFirebase>
           } />
         </Routes>
