@@ -1,9 +1,24 @@
 import { ref, get, set, push, remove, query, orderByChild, equalTo, update, child } from "firebase/database";
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { db, auth } from "../firebase/config";
-import type { Alumno, Asignatura, Matricula, NotaAlumno, NotaAvaliacion, NotaProba, Profesor } from "../utils/storageManager";
+import type { 
+  Alumno, 
+  Asignatura, 
+  Matricula, 
+  NotaAlumno, 
+  NotaAvaliacion, 
+  NotaProba, 
+  Profesor,
+  ConfiguracionAvaliacion,
+  Avaliacion,
+  Proba
+} from "../utils/storageManager";
 
 class RealtimeDatabaseManager {
+  private usuarioActual: string | null = null;
+  // Mapa para rastrear los IDs de las últimas notas guardadas por cada combinación alumno-asignatura
+  private lastSavedNotaIdMap: Record<string, string> = {};
+  
   // GESTIÓN DE AUTENTICACIÓN
   
   // Registrar un nuevo profesor (también crea la cuenta de autenticación)
@@ -842,7 +857,7 @@ class RealtimeDatabaseManager {
   // GESTIÓN DE NOTAS
   
   // Obtener nota de un alumno en una asignatura
-  async getNotaAlumno(alumnoId: string, asignaturaId: string): Promise<NotaAlumno | null> {
+  async getNotaAlumno(alumnoId: string, asignaturaId: string, retryCount = 0): Promise<NotaAlumno | null> {
     try {
       console.log(`Buscando notas para alumno=${alumnoId}, asignatura=${asignaturaId}`);
       
@@ -872,7 +887,35 @@ class RealtimeDatabaseManager {
         }
       }
       
-      console.log(`No se encontraron notas para alumno=${alumnoId}, asignatura=${asignaturaId}`);
+      // Si estamos después de un update y no se encontraron datos, puede ser un problema de consistencia eventual
+      // Intentamos buscar directamente por ID si tenemos un registro de la última nota guardada
+      if (this.lastSavedNotaIdMap && this.lastSavedNotaIdMap[`${alumnoId}-${asignaturaId}`]) {
+        const notaId = this.lastSavedNotaIdMap[`${alumnoId}-${asignaturaId}`];
+        console.log(`Intentando recuperar nota directamente por ID: ${notaId}`);
+        
+        const notaRefById = ref(db, `notas/${notaId}`);
+        const snapshotById = await get(notaRefById);
+        
+        if (snapshotById.exists()) {
+          const notaData = snapshotById.val();
+          const notaEncontrada: NotaAlumno = {
+            ...notaData,
+            id: notaId
+          };
+          console.log(`Nota recuperada por ID: ${notaId}`);
+          return notaEncontrada;
+        }
+      }
+      
+      // Si después de los intentos anteriores no se encuentra, y estamos dentro del límite de reintentos
+      if (retryCount < 3) {
+        console.log(`Reintentando obtener nota (intento ${retryCount + 1}/3)...`);
+        // Esperar un tiempo antes de reintentar (aumentando con cada intento)
+        await new Promise(resolve => setTimeout(resolve, 300 * (retryCount + 1)));
+        return this.getNotaAlumno(alumnoId, asignaturaId, retryCount + 1);
+      }
+      
+      console.log(`No se encontraron notas para alumno=${alumnoId}, asignatura=${asignaturaId} después de ${retryCount} reintentos`);
       return null;
     } catch (error) {
       console.error("Error al obtener nota de alumno:", error);
@@ -955,113 +998,33 @@ class RealtimeDatabaseManager {
           
           const newNotaRef = push(ref(db, "notas"));
           await set(newNotaRef, nuevaNota);
-          return;
+          nota.id = newNotaRef.key!;
         }
       }
       
-      // Obtener la configuración actualizada de la asignatura
+      // Actualizar la nota con los cálculos necesarios
       const asignatura = await this.getAsignaturaById(nota.asignaturaId);
       if (!asignatura || !asignatura.configuracionAvaliacion) {
-        throw new Error('A asignatura non ten configuración de avaliación');
-      }
-
-      // Hacer una copia profunda del objeto nota para no modificar la entrada original
-      // hasta que estemos seguros de que todos los cálculos son correctos
-      const notaActualizada = JSON.parse(JSON.stringify(nota));
-      
-      // Asegurarse de que existen todas las evaluaciones y pruebas según la configuración actual
-      asignatura.configuracionAvaliacion.avaliaciois.forEach(avaliacion => {
-        // Buscar la evaluación en las notas
-        let notaAvaliacion = notaActualizada.notasAvaliaciois.find(
-          (na: NotaAvaliacion) => na.avaliacionId === avaliacion.id
-        );
-        
-        // Si no existe, crearla
-        if (!notaAvaliacion) {
-          notaAvaliacion = {
-            avaliacionId: avaliacion.id,
-            notasProbas: []
-          };
-          notaActualizada.notasAvaliaciois.push(notaAvaliacion);
-        }
-        
-        // Asegurarse de que existen todas las pruebas según la configuración actual
-        avaliacion.probas.forEach(proba => {
-          // Buscar la prueba en las notas
-          const existeNotaProba = notaAvaliacion.notasProbas.some(
-            (np: NotaProba) => np.probaId === proba.id
-          );
-          
-          // Si no existe, crearla
-          if (!existeNotaProba) {
-            notaAvaliacion.notasProbas.push({
-              probaId: proba.id,
-              valor: 0
-            });
-          }
-        });
-      });
-
-      // Actualizar notas y calcular notas finales
-      notaActualizada.updatedAt = new Date().toISOString();
-      
-      // Calcular nota final de cada evaluación
-      if (asignatura && asignatura.configuracionAvaliacion) {
-        notaActualizada.notasAvaliaciois.forEach((notaAval: NotaAvaliacion) => {
-          const avaliacion = asignatura.configuracionAvaliacion!.avaliaciois.find(
-            av => av.id === notaAval.avaliacionId
-          );
-          
-          if (avaliacion) {
-            let sumaNotas = 0;
-            let sumaPorcentajes = 0;
-            
-            notaAval.notasProbas.forEach((notaProba: NotaProba) => {
-              const proba = avaliacion.probas.find(p => p.id === notaProba.probaId);
-              if (proba) {
-                sumaNotas += (notaProba.valor * proba.porcentaxe) / 100;
-                sumaPorcentajes += proba.porcentaxe;
-              }
-            });
-            
-            // Si hay porcentajes definidos, calcular nota final de la evaluación
-            if (sumaPorcentajes > 0) {
-              notaAval.notaFinal = sumaNotas;
-            }
-          }
-        });
-        
-        // Calcular nota final del curso
-        let sumaNotas = 0;
-        let sumaPorcentajes = 0;
-        
-        notaActualizada.notasAvaliaciois.forEach((notaAval: NotaAvaliacion) => {
-          const avaliacion = asignatura.configuracionAvaliacion!.avaliaciois.find(
-            av => av.id === notaAval.avaliacionId
-          );
-          
-          if (avaliacion && notaAval.notaFinal !== undefined) {
-            sumaNotas += (notaAval.notaFinal * avaliacion.porcentaxeNota) / 100;
-            sumaPorcentajes += avaliacion.porcentaxeNota;
-          }
-        });
-        
-        if (sumaPorcentajes > 0) {
-          notaActualizada.notaFinal = parseFloat(sumaNotas.toFixed(2));
-        }
+        throw new Error('No se encontró la configuración de evaluación');
       }
       
-      // Actualizar la nota existente
+      // Recalcular notas finales de cada evaluación y del curso
+      const notaCalculada = this.calcularNotasFinales(nota, asignatura.configuracionAvaliacion);
+      notaCalculada.updatedAt = new Date().toISOString();
+      
+      // Actualizar la nota en la base de datos
       const notaRef = ref(db, `notas/${nota.id}`);
+      await update(notaRef, notaCalculada);
       
-      // Eliminar el ID del objeto antes de guardarlo en Firebase
-      const { id, ...notaSinId } = notaActualizada;
+      // Registrar en el mapa la última nota guardada para facilitar la recuperación inmediata
+      const clave = `${nota.alumnoId}-${nota.asignaturaId}`;
+      this.lastSavedNotaIdMap[clave] = nota.id;
+      console.log(`Registrado ID de nota en mapa: ${clave} -> ${nota.id}`);
       
-      await update(notaRef, notaSinId);
-      console.log(`Notas actualizadas para alumno ${notaActualizada.alumnoId} en asignatura ${notaActualizada.asignaturaId}. Nota final: ${notaActualizada.notaFinal}`);
+      return;
     } catch (error) {
-      console.error("Error al actualizar nota de alumno:", error);
-      throw error;
+      console.error('Error al actualizar nota del alumno:', error);
+      throw new Error('Non se puideron actualizar as notas do alumno');
     }
   }
   
@@ -1131,6 +1094,87 @@ class RealtimeDatabaseManager {
       console.error("Error al obtener notas por asignatura:", error);
       return [];
     }
+  }
+  
+  // Método para calcular las notas finales de evaluaciones y curso
+  private calcularNotasFinales(nota: NotaAlumno, configuracionAvaliacion: ConfiguracionAvaliacion): NotaAlumno {
+    // Crear una copia para no mutar el original
+    const notaCalculada = { ...nota };
+    
+    // Calcular la nota final de cada evaluación
+    if (notaCalculada.notasAvaliaciois && Array.isArray(notaCalculada.notasAvaliaciois)) {
+      notaCalculada.notasAvaliaciois = notaCalculada.notasAvaliaciois.map(notaEval => {
+        // Encontrar la configuración de esta evaluación
+        const configEval = configuracionAvaliacion.avaliaciois.find(
+          config => config.id === notaEval.avaliacionId
+        );
+        
+        if (!configEval) return notaEval; // Si no hay config, dejamos la nota igual
+        
+        // Calcular nota final de la evaluación basándose en las notas de las pruebas
+        let notaFinalEval = 0;
+        let sumaPorcentajes = 0;
+        
+        if (notaEval.notasProbas && Array.isArray(notaEval.notasProbas)) {
+          notaEval.notasProbas.forEach(notaProba => {
+            // Encontrar la configuración de esta prueba
+            const configProba = configEval.probas.find(p => p.id === notaProba.probaId);
+            if (configProba) {
+              notaFinalEval += (notaProba.valor * configProba.porcentaxe) / 100;
+              sumaPorcentajes += configProba.porcentaxe;
+            }
+          });
+          
+          // Normalizar si los porcentajes no suman 100
+          if (sumaPorcentajes > 0 && sumaPorcentajes !== 100) {
+            notaFinalEval = (notaFinalEval * 100) / sumaPorcentajes;
+          }
+          
+          // Asegurarse de que la nota está dentro del rango válido (0-10)
+          notaFinalEval = Math.max(0, Math.min(10, notaFinalEval));
+        }
+        
+        // Redondear a 2 decimales
+        notaFinalEval = Math.round(notaFinalEval * 100) / 100;
+        
+        return {
+          ...notaEval,
+          notaFinal: notaFinalEval
+        };
+      });
+    }
+    
+    // Calcular la nota final del curso basado en las notas de las evaluaciones
+    let notaFinalCurso = 0;
+    let sumaPorcentajesEval = 0;
+    
+    notaCalculada.notasAvaliaciois?.forEach(notaEval => {
+      if (notaEval.notaFinal !== undefined) {
+        const configEval = configuracionAvaliacion.avaliaciois.find(
+          config => config.id === notaEval.avaliacionId
+        );
+        
+        if (configEval && configEval.porcentaxeNota) {
+          notaFinalCurso += (notaEval.notaFinal * configEval.porcentaxeNota) / 100;
+          sumaPorcentajesEval += configEval.porcentaxeNota;
+        }
+      }
+    });
+    
+    // Normalizar si los porcentajes no suman 100
+    if (sumaPorcentajesEval > 0 && sumaPorcentajesEval !== 100) {
+      notaFinalCurso = (notaFinalCurso * 100) / sumaPorcentajesEval;
+    }
+    
+    // Asegurarse de que la nota está dentro del rango válido (0-10)
+    notaFinalCurso = Math.max(0, Math.min(10, notaFinalCurso));
+    
+    // Redondear a 2 decimales
+    notaFinalCurso = Math.round(notaFinalCurso * 100) / 100;
+    
+    notaCalculada.notaFinal = notaFinalCurso;
+    
+    return notaCalculada;
   }
 }
 

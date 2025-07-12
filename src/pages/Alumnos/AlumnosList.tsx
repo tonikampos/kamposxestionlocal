@@ -21,6 +21,13 @@ const AlumnosList: React.FC<AlumnosListProps> = ({ onEditAlumno }) => {
   useEffect(() => {
     if (currentUser) {
       loadAlumnos();
+      
+      // Configurar un intervalo para refrescar periódicamente el estado de matriculación
+      const intervalId = setInterval(() => {
+        refreshMatriculacionStatus();
+      }, 5000); // Cada 5 segundos para una actualización más rápida
+      
+      return () => clearInterval(intervalId);
     }
   }, [currentUser]);
 
@@ -69,6 +76,60 @@ const AlumnosList: React.FC<AlumnosListProps> = ({ onEditAlumno }) => {
     }
   };
 
+  // Función para refrescar solo el estado de matriculación sin recargar todos los alumnos
+  const refreshMatriculacionStatus = async () => {
+    if (!currentUser || alumnos.length === 0) return;
+    
+    try {
+      console.log('AlumnosList: Refrescando estado de matriculación...');
+      const matriculados: Record<string, boolean> = {...matriculadosMap};
+      let cambiosDetectados = false;
+      
+      // Procesamos por lotes para no sobrecargar la base de datos
+      const batchSize = 5;
+      for (let i = 0; i < alumnos.length; i += batchSize) {
+        const alumnosBatch = alumnos.slice(i, i + batchSize);
+        const promesas = alumnosBatch.map(async (alumno) => {
+          try {
+            const matriculasAlumno = await dataManager.getMatriculasByAlumno(alumno.id);
+            const estaMatriculado = matriculasAlumno.length > 0;
+            
+            // Solo actualizar si hay cambios
+            if (matriculados[alumno.id] !== estaMatriculado) {
+              matriculados[alumno.id] = estaMatriculado;
+              return { id: alumno.id, cambio: true, estaMatriculado };
+            }
+            return { id: alumno.id, cambio: false };
+          } catch (error) {
+            console.error(`Error al verificar matrículas para alumno ${alumno.id}:`, error);
+            return { id: alumno.id, cambio: false };
+          }
+        });
+        
+        const resultados = await Promise.all(promesas);
+        resultados.forEach(resultado => {
+          if (resultado.cambio) {
+            cambiosDetectados = true;
+            console.log(`Estado de matriculación actualizado para alumno ${resultado.id}: ${resultado.estaMatriculado ? 'Matriculado' : 'No matriculado'}`);
+          }
+        });
+        
+        // Pequeña pausa entre lotes para no sobrecargar Firebase
+        if (i + batchSize < alumnos.length) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }
+      
+      // Actualizar el estado solo si se detectaron cambios
+      if (cambiosDetectados) {
+        setMatriculadosMap(matriculados);
+        console.log('AlumnosList: Estado de matriculación actualizado');
+      }
+    } catch (error) {
+      console.error('Error al refrescar estado de matriculación:', error);
+    }
+  };
+
   const filterAlumnos = () => {
     if (!searchTerm.trim()) {
       setFilteredAlumnos(alumnos);
@@ -105,22 +166,21 @@ const AlumnosList: React.FC<AlumnosListProps> = ({ onEditAlumno }) => {
 
   const irANotas = async (alumno: Alumno) => {
     // Ya no es necesario verificar si está matriculado aquí porque el botón estará deshabilitado
-    // Sin embargo, mantenemos la verificación por seguridad
-    if (!matriculadosMap[alumno.id]) {
-      alert('O alumno non está matriculado en ningunha asignatura');
-      return;
-    }
-    
+    // Sin embargo, mantenemos la verificación por seguridad y actualizamos el estado si es necesario
     try {
       // Verificar que el alumno tiene al menos una matrícula activa
       const matriculas = await dataManager.getMatriculasByAlumno(alumno.id);
+      const estaMatriculado = matriculas.length > 0;
       
-      if (matriculas.length === 0) {
-        // Actualizar el estado local si hay inconsistencia
+      // Si hay inconsistencia entre el estado local y el real, actualizar el estado
+      if (matriculadosMap[alumno.id] !== estaMatriculado) {
+        console.log(`Actualizando estado de matriculación para ${alumno.nome}: ${estaMatriculado ? 'Matriculado' : 'No matriculado'}`);
         const updatedMap = {...matriculadosMap};
-        updatedMap[alumno.id] = false;
+        updatedMap[alumno.id] = estaMatriculado;
         setMatriculadosMap(updatedMap);
-        
+      }
+      
+      if (!estaMatriculado) {
         alert('O alumno non está matriculado en ningunha asignatura');
         return;
       }

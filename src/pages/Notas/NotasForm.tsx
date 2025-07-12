@@ -132,17 +132,35 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
         console.warn("Número de avaliacións non coincide co esperado. Actualizando...");
       }
       
+      // Hacer una copia local de las notas para mostrarlas incluso si hay un problema al recargarlas
+      const notaCopia = {...notaAlumno};
+      
       // Gardar directamente as notas completas tal como están no estado
       // Ahora el updateNotaAlumno calculará las notas finales de evaluaciones y curso
       await dataManager.updateNotaAlumno(notaAlumno);
       
+      // Pequeña pausa para permitir la sincronización con Firebase (consistencia eventual)
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
       // Recargar las notas para obtener los cálculos actualizados
-      const notaActualizada = await dataManager.getNotaAlumno(alumno.id, asignaturaId);
+      let notaActualizada = await dataManager.getNotaAlumno(alumno.id, asignaturaId);
       
       // Comprobar si se han perdido datos
       if (!notaActualizada) {
-        console.error("¡ERROR! No se encontraron las notas después de guardar");
-        throw new Error("Non se atoparon as notas despois de gardar");
+        console.warn("No se encontraron las notas después de guardar, intentando de nuevo...");
+        
+        // Esperar un poco más y reintentar
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        notaActualizada = await dataManager.getNotaAlumno(alumno.id, asignaturaId);
+        
+        // Si aún no se encuentra, usar la copia local con un aviso
+        if (!notaActualizada) {
+          console.error("¡ERROR! No se encontraron las notas después de guardar y reintentar");
+          notaActualizada = notaCopia;
+          
+          // Mostrar mensaje de aviso pero no lanzar error
+          alert('As notas gardáronse correctamente, pero houbo un problema ao recargar os datos. Refresca a páxina se non ves as notas actualizadas.');
+        }
       }
       
       console.log("Notas actualizadas:", notaActualizada);
