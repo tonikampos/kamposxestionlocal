@@ -965,139 +965,14 @@ class RealtimeDatabaseManager {
     }
   }
   
-  // Método auxiliar para eliminar notas duplicadas sin mensajes de alerta
-  async eliminarNotasDuplicadas(alumnoId: string, asignaturaId: string): Promise<void> {
-    try {
-      // Búsqueda eficiente de todas las notas para este alumno
-      const notasRefByAlumno = query(ref(db, "notas"), orderByChild("alumnoId"), equalTo(alumnoId));
-      const snapshot = await get(notasRefByAlumno);
-      
-      if (!snapshot.exists()) return;
-      
-      const notasData = snapshot.val();
-      const notasCoincidentes: {id: string, updatedAt: string}[] = [];
-      
-      // Recopilar todas las notas coincidentes con sus fechas
-      for (const key of Object.keys(notasData)) {
-        const nota = notasData[key];
-        if (nota.asignaturaId === asignaturaId) {
-          notasCoincidentes.push({
-            id: key,
-            updatedAt: nota.updatedAt || ''
-          });
-        }
-      }
-      
-      // Si hay más de una nota, mantener solo la más reciente
-      if (notasCoincidentes.length > 1) {
-        // Ordenar por fecha (más reciente primero)
-        notasCoincidentes.sort((a, b) => {
-          const fechaA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
-          const fechaB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
-          return fechaB - fechaA;
-        });
-        
-        // Mantener la primera (más reciente) y eliminar las demás
-        const notaAMantener = notasCoincidentes[0].id;
-        
-        // Eliminar duplicados silenciosamente
-        for (let i = 1; i < notasCoincidentes.length; i++) {
-          const idEliminar = notasCoincidentes[i].id;
-          console.log(`Eliminando nota duplicada con ID: ${idEliminar}`);
-          await remove(ref(db, `notas/${idEliminar}`));
-        }
-        
-        // Actualizar mapa de notas guardadas
-        this.lastSavedNotaIdMap[`${alumnoId}-${asignaturaId}`] = notaAMantener;
-      }
-    } catch (error) {
-      console.error("Error al eliminar notas duplicadas:", error);
-    }
-  }
 
-  // Limpiar todas las notas duplicadas en la base de datos
-  async limpiarNotasDuplicadas(): Promise<void> {
-    try {
-      console.log("Iniciando limpieza de notas duplicadas en toda la base de datos...");
-      
-      // Obtener todas las notas
-      const notasRef = ref(db, "notas");
-      const snapshot = await get(notasRef);
-      
-      if (!snapshot.exists()) {
-        console.log("No hay notas para limpiar");
-        return;
-      }
-      
-      const notasData = snapshot.val();
-      
-      // Agrupar notas por combinación alumno-asignatura
-      const notasPorCombinacion: Record<string, Array<{id: string, nota: any}>> = {};
-      
-      for (const key of Object.keys(notasData)) {
-        const nota = notasData[key];
-        if (nota.alumnoId && nota.asignaturaId) {
-          const combinacion = `${nota.alumnoId}-${nota.asignaturaId}`;
-          
-          if (!notasPorCombinacion[combinacion]) {
-            notasPorCombinacion[combinacion] = [];
-          }
-          
-          notasPorCombinacion[combinacion].push({
-            id: key,
-            nota: nota
-          });
-        }
-      }
-      
-      // Identificar y eliminar duplicados
-      let totalCombinaciones = 0;
-      let totalDuplicadosEliminados = 0;
-      
-      for (const combinacion of Object.keys(notasPorCombinacion)) {
-        totalCombinaciones++;
-        const notas = notasPorCombinacion[combinacion];
-        
-        if (notas.length > 1) {
-          // Ordenar por fecha de actualización (más reciente primero)
-          notas.sort((a, b) => {
-            const fechaA = a.nota.updatedAt ? new Date(a.nota.updatedAt).getTime() : 0;
-            const fechaB = b.nota.updatedAt ? new Date(b.nota.updatedAt).getTime() : 0;
-            return fechaB - fechaA;
-          });
-          
-          // Mantener la primera y eliminar las demás
-          const notaAMantener = notas[0].id;
-          console.log(`Combinación ${combinacion}: Manteniendo nota ${notaAMantener}, eliminando ${notas.length - 1} duplicados`);
-          
-          for (let i = 1; i < notas.length; i++) {
-            await remove(ref(db, `notas/${notas[i].id}`));
-            totalDuplicadosEliminados++;
-          }
-          
-          // Actualizar el mapa de notas
-          const [alumnoId, asignaturaId] = combinacion.split('-');
-          this.lastSavedNotaIdMap[combinacion] = notaAMantener;
-        }
-      }
-      
-      console.log(`Limpieza completada: ${totalCombinaciones} combinaciones revisadas, ${totalDuplicadosEliminados} duplicados eliminados`);
-    } catch (error) {
-      console.error("Error al limpiar notas duplicadas:", error);
-    }
-  }
+
+
 
   // Método para inicializar una nota para un alumno en una asignatura
   async initNotaAlumno(alumnoId: string, asignaturaId: string): Promise<NotaAlumno> {
-    try {
-      // Primero limpiar cualquier duplicado silenciosamente antes de iniciar
-      try {
-        await this.eliminarNotasDuplicadas(alumnoId, asignaturaId);
-      } catch (err) {
-        // Ignorar errores en la limpieza previa
-      }
-      
-      // Verificar si ya existe una nota después de limpiar duplicados
+    try {      
+      // Verificar si ya existe una nota
       const notaExistente = await this.getNotaAlumno(alumnoId, asignaturaId);
       if (notaExistente) {
         return notaExistente;

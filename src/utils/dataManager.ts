@@ -177,9 +177,7 @@ class DataManager {
   }
 
   // Función para limpiar notas duplicadas
-  async limpiarNotasDuplicadas(): Promise<void> {
-    return realtimeDatabaseManager.limpiarNotasDuplicadas();
-  }
+
 }
 
 export const dataManager = new DataManager();

@@ -55,36 +55,14 @@ const NotasPage = () => {
     setRefreshKey(prevKey => prevKey + 1);
   };
 
-  // Función para limpiar notas duplicadas
-  const limpiarNotasDuplicadas = async () => {
-    try {
-      if (!confirm("Esta acción buscará y eliminará notas duplicadas en la base de datos. ¿Desea continuar?")) {
-        return;
-      }
-      
-      console.log("Iniciando limpieza de notas duplicadas...");
-      await dataManager.limpiarNotasDuplicadas();
-      
-      alert("Limpieza de notas duplicadas completada con éxito. Refresque la página para ver los cambios.");
-    } catch (error) {
-      console.error("Error al limpiar notas duplicadas:", error);
-      alert("Ocurrió un error durante la limpieza de notas duplicadas. Consulta la consola para más detalles.");
-    }
-  };
+
 
   return (
     <div className="container mx-auto py-8 px-4">
       <h1 className="text-2xl font-bold mb-6">Xestión de Notas</h1>
 
-      {/* Opciones de administración */}
+      {/* Espacio para opciones de administración futura si es necesario */}
       <div className="flex justify-end mb-4">
-        <button 
-          onClick={limpiarNotasDuplicadas} 
-          className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-md text-sm"
-          title="Usar solo en caso de problemas de sincronización"
-        >
-          Eliminar notas duplicadas
-        </button>
       </div>
 
       {/* Selector de Asignatura */}
