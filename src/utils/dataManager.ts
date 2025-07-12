@@ -176,8 +176,8 @@ class DataManager {
     return this.getAlumnosByAsignatura(asignaturaId);
   }
 
+  // Función para limpiar notas duplicadas
   async limpiarNotasDuplicadas(): Promise<void> {
-    console.log('dataManager: iniciando limpieza de notas duplicadas');
     return realtimeDatabaseManager.limpiarNotasDuplicadas();
   }
 }

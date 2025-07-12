@@ -884,17 +884,8 @@ class RealtimeDatabaseManager {
           }
         }
         
-        // Si encontramos más de una, reportamos la situación y programamos una limpieza
+        // Si encontramos más de una, usamos la más reciente y eliminamos las demás silenciosamente
         if (notasCoincidentes.length > 1) {
-          console.warn(`¡ALERTA! Se encontraron ${notasCoincidentes.length} notas para el mismo alumno y asignatura`);
-          
-          // Programar una limpieza para el próximo ciclo (no bloqueante)
-          setTimeout(() => {
-            this.eliminarNotasDuplicadas(alumnoId, asignaturaId).catch(err => 
-              console.error("Error al programar limpieza de notas duplicadas:", err)
-            );
-          }, 100);
-          
           // Ordenar por fecha de actualización (la más reciente primero)
           notasCoincidentes.sort((a, b) => {
             const fechaA = a.nota.updatedAt ? new Date(a.nota.updatedAt).getTime() : 0;
@@ -902,9 +893,23 @@ class RealtimeDatabaseManager {
             return fechaB - fechaA;
           });
           
+          // Eliminar duplicados en segundo plano sin mostrar mensajes
+          const duplicadosAEliminar = notasCoincidentes.slice(1);
+          if (duplicadosAEliminar.length > 0) {
+            (async () => {
+              try {
+                for (const item of duplicadosAEliminar) {
+                  await remove(ref(db, `notas/${item.id}`));
+                }
+              } catch (err) {
+                // Error silencioso
+              }
+            })();
+          }
+          
           // Devolver la más reciente
           const notaMasReciente = notasCoincidentes[0];
-          console.log(`Devolviendo la nota más reciente (ID: ${notaMasReciente.id})`);
+          this.lastSavedNotaIdMap[`${alumnoId}-${asignaturaId}`] = notaMasReciente.id;
           
           return {
             ...notaMasReciente.nota,
@@ -960,11 +965,10 @@ class RealtimeDatabaseManager {
     }
   }
   
-  // Método auxiliar para eliminar notas duplicadas
+  // Método auxiliar para eliminar notas duplicadas sin mensajes de alerta
   async eliminarNotasDuplicadas(alumnoId: string, asignaturaId: string): Promise<void> {
     try {
-      console.log(`Iniciando limpieza de notas duplicadas para alumno=${alumnoId}, asignatura=${asignaturaId}`);
-      
+      // Búsqueda eficiente de todas las notas para este alumno
       const notasRefByAlumno = query(ref(db, "notas"), orderByChild("alumnoId"), equalTo(alumnoId));
       const snapshot = await get(notasRefByAlumno);
       
@@ -995,9 +999,8 @@ class RealtimeDatabaseManager {
         
         // Mantener la primera (más reciente) y eliminar las demás
         const notaAMantener = notasCoincidentes[0].id;
-        console.log(`Manteniendo la nota más reciente con ID: ${notaAMantener}`);
         
-        // Eliminar duplicados
+        // Eliminar duplicados silenciosamente
         for (let i = 1; i < notasCoincidentes.length; i++) {
           const idEliminar = notasCoincidentes[i].id;
           console.log(`Eliminando nota duplicada con ID: ${idEliminar}`);
@@ -1087,20 +1090,26 @@ class RealtimeDatabaseManager {
   // Método para inicializar una nota para un alumno en una asignatura
   async initNotaAlumno(alumnoId: string, asignaturaId: string): Promise<NotaAlumno> {
     try {
-      // Primero verificar si ya existe una nota
+      // Primero limpiar cualquier duplicado silenciosamente antes de iniciar
+      try {
+        await this.eliminarNotasDuplicadas(alumnoId, asignaturaId);
+      } catch (err) {
+        // Ignorar errores en la limpieza previa
+      }
+      
+      // Verificar si ya existe una nota después de limpiar duplicados
       const notaExistente = await this.getNotaAlumno(alumnoId, asignaturaId);
       if (notaExistente) {
         return notaExistente;
       }
 
-      // Obtener la configuración de la asignatura para inicializar correctamente las evaluaciones y pruebas
+      // Obtener la configuración de la asignatura
       const asignatura = await this.getAsignaturaById(asignaturaId);
       if (!asignatura || !asignatura.configuracionAvaliacion) {
-        console.error("No se puede inicializar la nota: la asignatura no existe o no tiene configuración de evaluación");
         throw new Error("Asignatura sen configuración de avaliación");
       }
 
-      // Si no existe, crear una nueva nota con evaluaciones y pruebas inicializadas
+      // Crear una nueva nota con evaluaciones y pruebas inicializadas
       const now = new Date().toISOString();
       
       // Inicializar las notas de evaluaciones basadas en la configuración de la asignatura
@@ -1109,15 +1118,14 @@ class RealtimeDatabaseManager {
         const notasProbas = avaliacion.probas.map(proba => {
           return {
             probaId: proba.id,
-            valor: 0, // Valor inicial 0
+            valor: 0,
             observacions: ''
           };
         });
         
         return {
           avaliacionId: avaliacion.id,
-          notasProbas: notasProbas,
-          // La nota final se calculará más tarde
+          notasProbas: notasProbas
         };
       });
 
@@ -1129,16 +1137,30 @@ class RealtimeDatabaseManager {
         updatedAt: now
       };
 
-      const newNotaRef = push(ref(db, "notas"));
-      await set(newNotaRef, notaData);
+      // Comprobar si ya tenemos un ID guardado en el mapa
+      const mapKey = `${alumnoId}-${asignaturaId}`;
+      const existingId = this.lastSavedNotaIdMap[mapKey];
       
-      // Guardar el ID en el mapa para futuras referencias
-      this.lastSavedNotaIdMap[`${alumnoId}-${asignaturaId}`] = newNotaRef.key!;
-      
-      return {
-        ...notaData,
-        id: newNotaRef.key!
-      };
+      if (existingId) {
+        // Si ya hay un ID guardado, actualizar ese registro en lugar de crear uno nuevo
+        await set(ref(db, `notas/${existingId}`), notaData);
+        return {
+          ...notaData,
+          id: existingId
+        };
+      } else {
+        // Si no hay ID guardado, crear un nuevo registro
+        const newNotaRef = push(ref(db, "notas"));
+        await set(newNotaRef, notaData);
+        
+        // Guardar el ID en el mapa para futuras referencias
+        this.lastSavedNotaIdMap[mapKey] = newNotaRef.key!;
+        
+        return {
+          ...notaData,
+          id: newNotaRef.key!
+        };
+      }
     } catch (error) {
       console.error("Error al inicializar nota de alumno:", error);
       throw error;
@@ -1147,8 +1169,17 @@ class RealtimeDatabaseManager {
 
   // Actualizar la nota de un alumno
   async updateNotaAlumno(nota: NotaAlumno): Promise<void> {
-    try {
-      console.log('realtimeDatabaseManager: actualizando nota', nota.id);
+    try {      
+      // Primero verificamos si tenemos un ID de nota guardado en nuestro mapa
+      const mapKey = `${nota.alumnoId}-${nota.asignaturaId}`;
+      const savedId = this.lastSavedNotaIdMap[mapKey];
+      
+      // Si el ID que tenemos en el objeto nota no coincide con el ID en nuestro mapa
+      // y tenemos un ID guardado, usamos el ID guardado para prevenir duplicados
+      if (savedId && nota.id !== savedId) {
+        console.log(`Corrigiendo ID de nota: ${nota.id} -> ${savedId}`);
+        nota.id = savedId;
+      }
       
       // Actualizar la fecha de modificación
       const notaToUpdate = {
@@ -1163,9 +1194,7 @@ class RealtimeDatabaseManager {
       await set(ref(db, `notas/${id}`), notaData);
       
       // Actualizar el mapa de notas guardadas
-      this.lastSavedNotaIdMap[`${nota.alumnoId}-${nota.asignaturaId}`] = id;
-      
-      console.log('realtimeDatabaseManager: nota actualizada correctamente');
+      this.lastSavedNotaIdMap[mapKey] = id;
     } catch (error) {
       console.error("Error al actualizar nota de alumno:", error);
       throw error;
