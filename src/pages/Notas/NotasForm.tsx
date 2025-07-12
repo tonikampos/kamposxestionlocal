@@ -136,27 +136,47 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
       await dataManager.updateNotaAlumno(notaCopia);
       
       // Breve pausa para permitir sincronización
-      await new Promise(resolve => setTimeout(resolve, 800));
+      await new Promise(resolve => setTimeout(resolve, 1000));
       
-      // Intentar recargar las notas con múltiples intentos si es necesario
+      // Verificar que las notas se guardaron correctamente
       let notaActualizada: NotaAlumno | null = null;
       let intentos = 0;
-      const maxIntentos = 3;
+      const maxIntentos = 5; // Aumentamos el número de intentos para mayor seguridad
       
-      while (!notaActualizada && intentos < maxIntentos) {
+      while (intentos < maxIntentos) {
         intentos++;
-        console.log(`Recargando notas (intento ${intentos}/${maxIntentos})...`);
+        console.log(`Verificando guardado de notas (intento ${intentos}/${maxIntentos})...`);
         
         notaActualizada = await dataManager.getNotaAlumno(alumno.id, asignaturaId);
         
-        if (!notaActualizada && intentos < maxIntentos) {
-          // Esperar un poco más antes del siguiente intento
-          await new Promise(resolve => setTimeout(resolve, 500 * intentos));
+        // Si encontramos la nota, verificar que tenga todas las evaluaciones y valores
+        if (notaActualizada) {
+          let esValida = true;
+          
+          // Verificación superficial: número correcto de evaluaciones
+          if (notaActualizada.notasAvaliaciois.length !== notaCopia.notasAvaliaciois.length) {
+            console.warn(`Verificación fallida: Número incorrecto de evaluaciones. Esperaba ${notaCopia.notasAvaliaciois.length}, obtuvo ${notaActualizada.notasAvaliaciois.length}`);
+            esValida = false;
+          }
+          
+          // Si la nota parece válida, podemos terminar la verificación
+          if (esValida) {
+            console.log("Verificación exitosa: Las notas se guardaron correctamente");
+            break;
+          }
+        }
+        
+        if (intentos < maxIntentos) {
+          // Aumentar el tiempo de espera con cada intento
+          const tiempoEspera = 600 * intentos;
+          console.log(`Esperando ${tiempoEspera}ms antes del siguiente intento...`);
+          await new Promise(resolve => setTimeout(resolve, tiempoEspera));
         }
       }
       
+      // Si después de todos los intentos no se pudo verificar, usar la copia local
       if (!notaActualizada) {
-        console.warn("No se pudieron recargar las notas después del guardado. Usando copia local.");
+        console.warn("No se pudieron verificar las notas después del guardado. Usando copia local.");
         notaActualizada = notaCopia;
       } else {
         console.log("Notas recargadas correctamente después del guardado.");
@@ -190,44 +210,66 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
   // Encontrar la evaluación activa
   const activeAvaliacion = asignatura.configuracionAvaliacion.avaliaciois.find(av => av.id === activeTab);
   
-  // Inicializar las notas si no existen para todas las evaluaciones
-  if (notaAlumno.notasAvaliaciois.length < asignatura.configuracionAvaliacion.avaliaciois.length) {
-    console.log("Faltan evaluaciones en las notas del alumno. Inicializando solo las evaluaciones faltantes...");
+  // Inicialización de notas con useEffect para mayor robustez
+  useEffect(() => {
+    if (!asignatura.configuracionAvaliacion || !notaAlumno) return;
     
-    // Crear un array con las evaluaciones que faltan
-    asignatura.configuracionAvaliacion.avaliaciois.forEach(avaliacion => {
-      // Verificar si esta evaluación ya existe en las notas
-      const existeEvaluacion = notaAlumno.notasAvaliaciois.some(na => na.avaliacionId === avaliacion.id);
+    console.log("Verificando e inicializando estructura de notas completa...");
+    
+    // Copia profunda para no modificar el estado directamente hasta confirmar cambios
+    const notasActualizadas = JSON.parse(JSON.stringify(notaAlumno)) as NotaAlumno;
+    let notasModificadas = false;
+    
+    // Verificar si faltan evaluaciones
+    if (notasActualizadas.notasAvaliaciois.length < asignatura.configuracionAvaliacion.avaliaciois.length) {
+      console.log(`Faltan evaluaciones. Alumno tiene ${notasActualizadas.notasAvaliaciois.length} pero deberían ser ${asignatura.configuracionAvaliacion.avaliaciois.length}`);
       
-      if (!existeEvaluacion) {
-        console.log(`Añadiendo evaluación faltante: ${avaliacion.id} (${avaliacion.numero}ª Evaluación)`);
-        // Crear evaluación con sus pruebas inicializadas
-        const notasProbas = avaliacion.probas.map(proba => ({
-          probaId: proba.id,
-          valor: 0,
-          observacions: ''
-        }));
-        
-        notaAlumno.notasAvaliaciois.push({
-          avaliacionId: avaliacion.id,
-          notasProbas
-        });
-      }
-    });
+      // Crear un mapa para acceso rápido a las evaluaciones existentes
+      const evaluacionesExistentesMap = new Map();
+      notasActualizadas.notasAvaliaciois.forEach(na => {
+        evaluacionesExistentesMap.set(na.avaliacionId, na);
+      });
+      
+      // Crear las evaluaciones que faltan
+      asignatura.configuracionAvaliacion.avaliaciois.forEach(avaliacion => {
+        if (!evaluacionesExistentesMap.has(avaliacion.id)) {
+          console.log(`Añadiendo evaluación faltante: ${avaliacion.id} (${avaliacion.numero}ª Evaluación)`);
+          notasModificadas = true;
+          
+          // Crear evaluación con sus pruebas inicializadas
+          const notasProbas = avaliacion.probas.map(proba => ({
+            probaId: proba.id,
+            valor: 0,
+            observacions: ''
+          }));
+          
+          notasActualizadas.notasAvaliaciois.push({
+            avaliacionId: avaliacion.id,
+            notasProbas
+          });
+        }
+      });
+    }
     
-    // También verificamos que cada evaluación tenga todas sus pruebas
-    notaAlumno.notasAvaliaciois.forEach(notaAval => {
+    // Verificar que cada evaluación tenga todas sus pruebas
+    notasActualizadas.notasAvaliaciois.forEach(notaAval => {
       const avaliacion = asignatura.configuracionAvaliacion!.avaliaciois.find(
         av => av.id === notaAval.avaliacionId
       );
       
       if (avaliacion) {
+        // Crear un mapa para acceso rápido a las pruebas existentes
+        const pruebasExistentesMap = new Map();
+        notaAval.notasProbas.forEach(np => {
+          pruebasExistentesMap.set(np.probaId, np);
+        });
+        
         // Verificar que estén todas las pruebas
         avaliacion.probas.forEach(proba => {
-          const existeProba = notaAval.notasProbas.some(np => np.probaId === proba.id);
-          
-          if (!existeProba) {
+          if (!pruebasExistentesMap.has(proba.id)) {
             console.log(`Añadiendo prueba faltante en evaluación ${avaliacion.id}: ${proba.id} (${proba.nome})`);
+            notasModificadas = true;
+            
             // Añadir la prueba que falta
             notaAval.notasProbas.push({
               probaId: proba.id,
@@ -238,10 +280,49 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
         });
       }
     });
-  }
+    
+    // Si se han añadido evaluaciones o pruebas, actualizar el estado y guardar en la base de datos
+    if (notasModificadas) {
+      console.log("Se han detectado evaluaciones o pruebas faltantes. Actualizando...");
+      
+      // Actualizar el estado local primero
+      setNotaAlumno(notasActualizadas);
+      
+      // Guardar en Firebase con verificación adicional
+      (async () => {
+        try {
+          // Primera escritura
+          await dataManager.updateNotaAlumno(notasActualizadas);
+          console.log("Primera escritura de inicialización completada, verificando...");
+          
+          // Verificar que se guardó correctamente
+          await new Promise(resolve => setTimeout(resolve, 800));
+          const notaVerificada = await dataManager.getNotaAlumno(alumno.id, asignaturaId);
+          
+          if (!notaVerificada) {
+            console.warn("Verificación fallida: No se pudo recuperar la nota. Reintentando guardado...");
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            await dataManager.updateNotaAlumno(notasActualizadas);
+            console.log("Segunda escritura de inicialización completada");
+          } else if (notaVerificada.notasAvaliaciois.length !== notasActualizadas.notasAvaliaciois.length) {
+            console.warn(`Verificación fallida: Número incorrecto de evaluaciones (${notaVerificada.notasAvaliaciois.length} vs ${notasActualizadas.notasAvaliaciois.length}). Reintentando...`);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            await dataManager.updateNotaAlumno(notasActualizadas);
+            console.log("Segunda escritura de inicialización completada");
+          } else {
+            console.log("Verificación exitosa: Estructura de notas actualizada y guardada correctamente");
+          }
+        } catch (error) {
+          console.error("Error al guardar la estructura inicializada de notas:", error);
+        }
+      })();
+    } else {
+      console.log("La estructura de notas está completa, no requiere inicialización");
+    }
+  }, [asignatura.configuracionAvaliacion, notaAlumno?.id, alumno.id, asignaturaId]);
   
   // Encontrar las notas de la evaluación activa
-  const activeNotaAvaliacion = notaAlumno.notasAvaliaciois.find(na => na.avaliacionId === activeTab);
+  const activeNotaAvaliacion = notaAlumno.notasAvaliaciois.find((na: any) => na.avaliacionId === activeTab);
 
   return (
     <div className="bg-white rounded-lg shadow-lg p-6 max-w-5xl mx-auto">
