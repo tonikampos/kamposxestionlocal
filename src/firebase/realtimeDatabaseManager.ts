@@ -1093,12 +1093,38 @@ class RealtimeDatabaseManager {
         return notaExistente;
       }
 
-      // Si no existe, crear una nueva nota
+      // Obtener la configuración de la asignatura para inicializar correctamente las evaluaciones y pruebas
+      const asignatura = await this.getAsignaturaById(asignaturaId);
+      if (!asignatura || !asignatura.configuracionAvaliacion) {
+        console.error("No se puede inicializar la nota: la asignatura no existe o no tiene configuración de evaluación");
+        throw new Error("Asignatura sen configuración de avaliación");
+      }
+
+      // Si no existe, crear una nueva nota con evaluaciones y pruebas inicializadas
       const now = new Date().toISOString();
+      
+      // Inicializar las notas de evaluaciones basadas en la configuración de la asignatura
+      const notasAvaliaciois = asignatura.configuracionAvaliacion.avaliaciois.map(avaliacion => {
+        // Para cada evaluación, inicializar las notas de las pruebas
+        const notasProbas = avaliacion.probas.map(proba => {
+          return {
+            probaId: proba.id,
+            valor: 0, // Valor inicial 0
+            observacions: ''
+          };
+        });
+        
+        return {
+          avaliacionId: avaliacion.id,
+          notasProbas: notasProbas,
+          // La nota final se calculará más tarde
+        };
+      });
+
       const notaData: Omit<NotaAlumno, "id"> = {
         alumnoId,
         asignaturaId,
-        notasAvaliaciois: [],
+        notasAvaliaciois: notasAvaliaciois,
         createdAt: now,
         updatedAt: now
       };

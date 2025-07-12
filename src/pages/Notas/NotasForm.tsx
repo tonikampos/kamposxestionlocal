@@ -242,6 +242,54 @@ Os datos gardados están seguros. Pode continuar traballando.`);
   // Encontrar la evaluación activa
   const activeAvaliacion = asignatura.configuracionAvaliacion.avaliaciois.find(av => av.id === activeTab);
   
+  // Inicializar las notas si no existen para todas las evaluaciones
+  if (notaAlumno.notasAvaliaciois.length < asignatura.configuracionAvaliacion.avaliaciois.length) {
+    console.log("Faltan evaluaciones en las notas del alumno. Inicializando...");
+    
+    // Crear un array con las evaluaciones que faltan
+    asignatura.configuracionAvaliacion.avaliaciois.forEach(avaliacion => {
+      // Verificar si esta evaluación ya existe en las notas
+      const existeEvaluacion = notaAlumno.notasAvaliaciois.some(na => na.avaliacionId === avaliacion.id);
+      
+      if (!existeEvaluacion) {
+        // Crear evaluación con sus pruebas inicializadas
+        const notasProbas = avaliacion.probas.map(proba => ({
+          probaId: proba.id,
+          valor: 0,
+          observacions: ''
+        }));
+        
+        notaAlumno.notasAvaliaciois.push({
+          avaliacionId: avaliacion.id,
+          notasProbas
+        });
+      }
+    });
+    
+    // También verificamos que cada evaluación tenga todas sus pruebas
+    notaAlumno.notasAvaliaciois.forEach(notaAval => {
+      const avaliacion = asignatura.configuracionAvaliacion!.avaliaciois.find(
+        av => av.id === notaAval.avaliacionId
+      );
+      
+      if (avaliacion) {
+        // Verificar que estén todas las pruebas
+        avaliacion.probas.forEach(proba => {
+          const existeProba = notaAval.notasProbas.some(np => np.probaId === proba.id);
+          
+          if (!existeProba) {
+            // Añadir la prueba que falta
+            notaAval.notasProbas.push({
+              probaId: proba.id,
+              valor: 0,
+              observacions: ''
+            });
+          }
+        });
+      }
+    });
+  }
+  
   // Encontrar las notas de la evaluación activa
   const activeNotaAvaliacion = notaAlumno.notasAvaliaciois.find(na => na.avaliacionId === activeTab);
 
@@ -397,7 +445,7 @@ Os datos gardados están seguros. Pode continuar traballando.`);
             </table>
           </div>
         </div>
-      ) : activeAvaliacion && activeNotaAvaliacion ? (
+      ) : activeAvaliacion ? (
         <div>
           <div className="bg-blue-50 p-4 rounded-lg mb-4">
             <h3 className="font-medium">
@@ -407,7 +455,7 @@ Os datos gardados están seguros. Pode continuar traballando.`);
               </span>
             </h3>
             
-            {activeNotaAvaliacion.notaFinal !== undefined && (
+            {activeNotaAvaliacion?.notaFinal !== undefined && (
               <p className="mt-2">
                 <span className="font-medium">Nota da avaliación:</span> {activeNotaAvaliacion.notaFinal.toFixed(2)}
               </p>
@@ -434,7 +482,9 @@ Os datos gardados están seguros. Pode continuar traballando.`);
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {activeAvaliacion.probas.map((proba) => {
-                  const notaProba = activeNotaAvaliacion.notasProbas.find(np => np.probaId === proba.id);
+                  // Si no existe la estructura de evaluación, crear un valor por defecto
+                  const notasProbas = activeNotaAvaliacion?.notasProbas || [];
+                  const notaProba = notasProbas.find(np => np.probaId === proba.id);
                   const valor = notaProba ? notaProba.valor : 0;
                   const observacion = notaProba?.observacions || '';
                   
