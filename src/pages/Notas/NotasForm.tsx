@@ -269,12 +269,35 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
   // Función para inicializar la estructura de notas (fuera de useEffect para evitar problemas)
   const inicializarEstructuraNotas = () => {
     try {
-      if (!asignatura || !asignatura.configuracionAvaliacion || !notaAlumno) return;
+      if (!asignatura || !asignatura.configuracionAvaliacion || !notaAlumno) {
+        console.log("No se puede inicializar: faltan datos necesarios");
+        return;
+      }
       
       console.log("Verificando estructura de notas...");
       
       // Copia profunda para no modificar el estado directamente
-      const notasActualizadas = JSON.parse(JSON.stringify(notaAlumno));
+      let notasActualizadas: NotaAlumno;
+      try {
+        notasActualizadas = JSON.parse(JSON.stringify(notaAlumno));
+        // Asegurar que la propiedad notasAvaliaciois existe y es un array
+        if (!Array.isArray(notasActualizadas.notasAvaliaciois)) {
+          console.log("Inicializando array de notasAvaliaciois porque no existía o no era un array");
+          notasActualizadas.notasAvaliaciois = [];
+        }
+      } catch (error) {
+        console.error("Error al clonar objeto de notas:", error);
+        // Si falla la copia, crear un objeto nuevo con los datos esenciales
+        notasActualizadas = {
+          id: notaAlumno.id || `${alumno.id}-${asignaturaId}`,
+          alumnoId: alumno.id,
+          asignaturaId: asignaturaId,
+          notasAvaliaciois: [],
+          createdAt: notaAlumno.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+      }
+      
       let notasModificadas = false;
       
       // Verificar si faltan evaluaciones
@@ -361,28 +384,27 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
     } catch (error) {
       console.error("Error al inicializar estructura de notas:", error);
     }
-  };
-  
-  // Llamar a la inicialización una sola vez cuando tenemos los datos necesarios
+  };      // Llamar a la inicialización solo cuando tenemos los datos necesarios
   useEffect(() => {
-    // Solo inicializar si tenemos todos los datos necesarios y hay un ID válido
-    if (notaAlumno?.id && asignatura && asignatura.configuracionAvaliacion && !loading) {
-      // Añadimos una marca para no reinicializar innecesariamente
-      if (!(notaAlumno as any)._inicializado) {
-        console.log("Inicializando estructura de notas - primera vez");
-        inicializarEstructuraNotas();
-        // Marcar como inicializado para no repetir
-        setNotaAlumno(prev => {
-          if (!prev) return prev;
-          return { ...prev, _inicializado: true };
-        });
-      }
+    // Solo inicializar si tenemos los datos necesarios y no estamos cargando
+    if (asignatura && asignatura.configuracionAvaliacion && notaAlumno && !loading) {
+      console.log("Inicializando estructura de notas...");
+      setTimeout(() => {
+        try {
+          inicializarEstructuraNotas();
+        } catch (error) {
+          console.error("Error al inicializar estructura de notas:", error);
+        }
+      }, 100); // Pequeño retraso para asegurar que otros estados se han actualizado
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [notaAlumno?.id, asignatura?.id, loading]);
+  }, [asignatura?.id, notaAlumno?.id, loading]);
   
-  // Encontrar las notas de la evaluación activa
-  const activeNotaAvaliacion = notaAlumno.notasAvaliaciois.find((na: any) => na.avaliacionId === activeTab);
+  // Encontrar las notas de la evaluación activa con protección contra errores
+  const activeNotaAvaliacion = notaAlumno && 
+    Array.isArray(notaAlumno.notasAvaliaciois) ? 
+    notaAlumno.notasAvaliaciois.find((na: any) => na?.avaliacionId === activeTab) : 
+    undefined;
 
   return (
     <div className="bg-white rounded-lg shadow-lg p-6 max-w-5xl mx-auto">
@@ -398,35 +420,40 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
         
         {/* Mostrar todas las notas de evaluaciones junto al nombre */}
         <div className="mt-3 flex flex-wrap gap-2">
-          {notaAlumno.notasAvaliaciois.map((notaEval) => {
-            const avaliacion = asignatura.configuracionAvaliacion?.avaliaciois.find(
-              av => av.id === notaEval.avaliacionId
-            );
+          {Array.isArray(notaAlumno?.notasAvaliaciois) ? (
+            notaAlumno.notasAvaliaciois.map((notaEval) => {
+              if (!notaEval) return null;
+              const avaliacion = asignatura?.configuracionAvaliacion?.avaliaciois?.find?.(
+                av => av.id === notaEval?.avaliacionId
+              );
             
-            if (!avaliacion) return null;
+              if (!avaliacion) return null;
             
-            let colorClass = "bg-gray-100 text-gray-800";
-            if (notaEval.notaFinal !== undefined) {
-              if (notaEval.notaFinal >= 9) {
-                colorClass = "bg-blue-100 text-blue-800";
-              } else if (notaEval.notaFinal >= 7) {
-                colorClass = "bg-green-100 text-green-800";
-              } else if (notaEval.notaFinal >= 5) {
-                colorClass = "bg-yellow-100 text-yellow-800";
-              } else {
-                colorClass = "bg-red-100 text-red-800";
+              let colorClass = "bg-gray-100 text-gray-800";
+              if (notaEval.notaFinal !== undefined) {
+                if (notaEval.notaFinal >= 9) {
+                  colorClass = "bg-blue-100 text-blue-800";
+                } else if (notaEval.notaFinal >= 7) {
+                  colorClass = "bg-green-100 text-green-800";
+                } else if (notaEval.notaFinal >= 5) {
+                  colorClass = "bg-yellow-100 text-yellow-800";
+                } else {
+                  colorClass = "bg-red-100 text-red-800";
+                }
               }
-            }
             
-            return (
-              <span key={notaEval.avaliacionId} 
-                className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-sm font-medium ${colorClass}`}>
-                {avaliacion.numero}ª Eval: {notaEval.notaFinal !== undefined ? notaEval.notaFinal.toFixed(2) : '—'}
-              </span>
-            );
-          })}
+              return (
+                <span key={notaEval.avaliacionId} 
+                  className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-sm font-medium ${colorClass}`}>
+                  {avaliacion.numero}ª Eval: {notaEval.notaFinal !== undefined ? notaEval.notaFinal.toFixed(2) : '—'}
+                </span>
+              );
+            })
+          ) : (
+            <span className="text-gray-500">No hay evaluaciones disponibles</span>
+          )}
           
-          {notaAlumno.notaFinal !== undefined && (
+          {notaAlumno?.notaFinal !== undefined && (
             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-sm font-medium ${
               notaAlumno.notaFinal >= 9 ? "bg-purple-100 text-purple-800" : 
               notaAlumno.notaFinal >= 7 ? "bg-indigo-100 text-indigo-800" : 
@@ -495,8 +522,9 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {notaAlumno.notasAvaliaciois.map((notaAval) => {
-                  const avaliacion = asignatura.configuracionAvaliacion!.avaliaciois.find(
+                {Array.isArray(notaAlumno?.notasAvaliaciois) && notaAlumno.notasAvaliaciois.map((notaAval) => {
+                  if (!notaAval) return null;
+                  const avaliacion = asignatura?.configuracionAvaliacion?.avaliaciois?.find?.(
                     av => av.id === notaAval.avaliacionId
                   );
                   
@@ -536,13 +564,13 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
             </table>
           </div>
         </div>
-      ) : activeAvaliacion ? (
+      ) : (activeAvaliacion && activeNotaAvaliacion) ? (
         <div>
           <div className="bg-blue-50 p-4 rounded-lg mb-4">
             <h3 className="font-medium">
-              {activeAvaliacion.numero}ª Avaliación 
+              {activeAvaliacion?.numero || '?'}ª Avaliación 
               <span className="text-sm font-normal ml-2">
-                (Porcentaxe na nota final: {activeAvaliacion.porcentaxeNota}%)
+                (Porcentaxe na nota final: {activeAvaliacion?.porcentaxeNota || 0}%)
               </span>
             </h3>
             
@@ -572,11 +600,12 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {activeAvaliacion.probas.map((proba) => {
+                {activeAvaliacion?.probas?.map((proba) => {
+                  if (!proba) return null;
                   // Si no existe la estructura de evaluación, crear un valor por defecto
-                  const notasProbas = activeNotaAvaliacion?.notasProbas || [];
-                  const notaProba = notasProbas.find(np => np.probaId === proba.id);
-                  const valor = notaProba ? notaProba.valor : 0;
+                  const notasProbas = Array.isArray(activeNotaAvaliacion?.notasProbas) ? activeNotaAvaliacion.notasProbas : [];
+                  const notaProba = notasProbas.find(np => np?.probaId === proba.id);
+                  const valor = (notaProba && typeof notaProba.valor === 'number') ? notaProba.valor : 0;
                   const observacion = notaProba?.observacions || '';
                   
                   return (
