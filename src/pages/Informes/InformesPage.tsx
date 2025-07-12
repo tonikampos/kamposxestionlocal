@@ -69,17 +69,10 @@ const InformesPage = () => {
   const [includeContactInfo, setIncludeContactInfo] = useState(false);
   const [orderBy, setOrderBy] = useState('apellidos');
   const [nivelEducativo, setNivelEducativo] = useState('todos');
-  // Nuevos estados para filtros y diseño
+  // Estados para filtros y diseño de informes
   const [filtroAlumnos, setFiltroAlumnos] = useState('todos');
   const [busquedaAlumno, setBusquedaAlumno] = useState('');
   const [colorTema, setColorTema] = useState('azul');
-  // Nuevos estados para el informe de alumnos
-  const [filtroAlumnos, setFiltroAlumnos] = useState('todos');
-  const [busquedaAlumno, setBusquedaAlumno] = useState('');
-  const [colorTema, setColorTema] = useState('azul');
-  const [filtroAlumnos, setFiltroAlumnos] = useState('todos'); // Nuevo estado para filtro de alumnos
-  const [busquedaAlumno, setBusquedaAlumno] = useState(''); // Nuevo estado para búsqueda de alumnos por texto
-  const [colorTema, setColorTema] = useState('azul'); // Nuevo estado para elegir color del tema del informe
   
   // Estado para el modal de previsualización de PDF
   const [showPdfPreview, setShowPdfPreview] = useState(false);
@@ -1124,7 +1117,7 @@ const InformesPage = () => {
                     link.click();
                     document.body.removeChild(link);
                   }}
-                ></button>
+                >
                   <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                   Descargar PDF
                 </button>
@@ -1136,7 +1129,7 @@ const InformesPage = () => {
                     // Abrir en una nueva pestaña
                     window.open(pdfUrl, '_blank');
                   }}
-                ></button>
+                >
                   <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                   Abrir en nova pestana
                 </button>
