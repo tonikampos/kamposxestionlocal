@@ -1083,6 +1083,167 @@ class RealtimeDatabaseManager {
       console.error("Error al limpiar notas duplicadas:", error);
     }
   }
+
+  // Método para inicializar una nota para un alumno en una asignatura
+  async initNotaAlumno(alumnoId: string, asignaturaId: string): Promise<NotaAlumno> {
+    try {
+      // Primero verificar si ya existe una nota
+      const notaExistente = await this.getNotaAlumno(alumnoId, asignaturaId);
+      if (notaExistente) {
+        return notaExistente;
+      }
+
+      // Si no existe, crear una nueva nota
+      const now = new Date().toISOString();
+      const notaData: Omit<NotaAlumno, "id"> = {
+        alumnoId,
+        asignaturaId,
+        notasAvaliaciois: [],
+        createdAt: now,
+        updatedAt: now
+      };
+
+      const newNotaRef = push(ref(db, "notas"));
+      await set(newNotaRef, notaData);
+      
+      // Guardar el ID en el mapa para futuras referencias
+      this.lastSavedNotaIdMap[`${alumnoId}-${asignaturaId}`] = newNotaRef.key!;
+      
+      return {
+        ...notaData,
+        id: newNotaRef.key!
+      };
+    } catch (error) {
+      console.error("Error al inicializar nota de alumno:", error);
+      throw error;
+    }
+  }
+
+  // Actualizar la nota de un alumno
+  async updateNotaAlumno(nota: NotaAlumno): Promise<void> {
+    try {
+      console.log('realtimeDatabaseManager: actualizando nota', nota.id);
+      
+      // Actualizar la fecha de modificación
+      const notaToUpdate = {
+        ...nota,
+        updatedAt: new Date().toISOString()
+      };
+      
+      // Eliminar el campo id para no guardarlo en Firebase
+      const { id, ...notaData } = notaToUpdate;
+      
+      // Guardar en Firebase
+      await set(ref(db, `notas/${id}`), notaData);
+      
+      // Actualizar el mapa de notas guardadas
+      this.lastSavedNotaIdMap[`${nota.alumnoId}-${nota.asignaturaId}`] = id;
+      
+      console.log('realtimeDatabaseManager: nota actualizada correctamente');
+    } catch (error) {
+      console.error("Error al actualizar nota de alumno:", error);
+      throw error;
+    }
+  }
+
+  // Eliminar todas las notas de un alumno en una asignatura
+  async eliminarNotasAlumnoAsignatura(alumnoId: string, asignaturaId: string): Promise<void> {
+    try {
+      console.log(`realtimeDatabaseManager: eliminando notas para alumno=${alumnoId}, asignatura=${asignaturaId}`);
+      
+      // Buscar todas las notas del alumno
+      const notasRefByAlumno = query(ref(db, "notas"), orderByChild("alumnoId"), equalTo(alumnoId));
+      const snapshot = await get(notasRefByAlumno);
+      
+      if (!snapshot.exists()) {
+        console.log("No se encontraron notas para eliminar");
+        return;
+      }
+      
+      const notasData = snapshot.val();
+      let notasEliminadas = 0;
+      
+      // Eliminar las notas que coincidan con la asignatura
+      for (const key of Object.keys(notasData)) {
+        const nota = notasData[key];
+        if (nota.asignaturaId === asignaturaId) {
+          await remove(ref(db, `notas/${key}`));
+          notasEliminadas++;
+        }
+      }
+      
+      // Eliminar la entrada del mapa de notas guardadas
+      delete this.lastSavedNotaIdMap[`${alumnoId}-${asignaturaId}`];
+      
+      console.log(`realtimeDatabaseManager: ${notasEliminadas} notas eliminadas`);
+    } catch (error) {
+      console.error("Error al eliminar notas de alumno en asignatura:", error);
+      throw error;
+    }
+  }
+
+  // Obtener todas las notas
+  async getNotas(): Promise<NotaAlumno[]> {
+    try {
+      console.log('realtimeDatabaseManager: obteniendo todas las notas');
+      
+      const notasRef = ref(db, "notas");
+      const snapshot = await get(notasRef);
+      
+      if (!snapshot.exists()) {
+        return [];
+      }
+      
+      const notasData = snapshot.val();
+      
+      // Convertir objeto a array de notas
+      const notasArray: NotaAlumno[] = Object.keys(notasData).map(key => ({
+        ...notasData[key],
+        id: key
+      }));
+      
+      console.log(`realtimeDatabaseManager: se encontraron ${notasArray.length} notas`);
+      return notasArray;
+    } catch (error) {
+      console.error("Error al obtener todas las notas:", error);
+      return [];
+    }
+  }
+
+  // Obtener notas por asignatura
+  async getNotasAsignatura(asignaturaId: string): Promise<NotaAlumno[]> {
+    try {
+      console.log('realtimeDatabaseManager: obteniendo notas para la asignatura', asignaturaId);
+      
+      // Obtener todas las notas (ya que Firebase no permite directamente filtrar por asignaturaId)
+      const notasRef = ref(db, "notas");
+      const snapshot = await get(notasRef);
+      
+      if (!snapshot.exists()) {
+        return [];
+      }
+      
+      const notasData = snapshot.val();
+      const notasAsignatura: NotaAlumno[] = [];
+      
+      // Filtrar notas por asignatura
+      Object.keys(notasData).forEach(key => {
+        const nota = notasData[key];
+        if (nota.asignaturaId === asignaturaId) {
+          notasAsignatura.push({
+            ...nota,
+            id: key
+          });
+        }
+      });
+      
+      console.log(`realtimeDatabaseManager: se encontraron ${notasAsignatura.length} notas para la asignatura ${asignaturaId}`);
+      return notasAsignatura;
+    } catch (error) {
+      console.error("Error al obtener notas por asignatura:", error);
+      return [];
+    }
+  }
 }
 
 export const realtimeDatabaseManager = new RealtimeDatabaseManager();
