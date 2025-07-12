@@ -844,28 +844,36 @@ class RealtimeDatabaseManager {
   // Obtener nota de un alumno en una asignatura
   async getNotaAlumno(alumnoId: string, asignaturaId: string): Promise<NotaAlumno | null> {
     try {
-      const notasRef = ref(db, "notas");
-      const snapshot = await get(notasRef);
+      console.log(`Buscando notas para alumno=${alumnoId}, asignatura=${asignaturaId}`);
       
-      if (!snapshot.exists()) {
-        return null;
+      // Utilizamos un índice compuesto para búsqueda más eficiente
+      // Para esto debe existir un índice en Firebase:
+      // ".indexOn": ["alumnoId", "asignaturaId"]
+      
+      // Primero intentamos buscar usando alumnoId como índice
+      const notasRefByAlumno = query(ref(db, "notas"), orderByChild("alumnoId"), equalTo(alumnoId));
+      const snapshotByAlumno = await get(notasRefByAlumno);
+      
+      if (snapshotByAlumno.exists()) {
+        const notasData = snapshotByAlumno.val();
+        
+        // Buscar entre las notas del alumno la correspondiente a la asignatura
+        for (const key of Object.keys(notasData)) {
+          const nota = notasData[key];
+          if (nota.asignaturaId === asignaturaId) {
+            const notaEncontrada: NotaAlumno = {
+              ...nota,
+              id: key
+            };
+            
+            console.log(`Nota encontrada con ID: ${key}`);
+            return notaEncontrada;
+          }
+        }
       }
       
-      const notasData = snapshot.val();
-      let notaEncontrada: NotaAlumno | null = null;
-      
-      // Buscar la nota del alumno en la asignatura
-      Object.keys(notasData).forEach(key => {
-        const nota = notasData[key];
-        if (nota.alumnoId === alumnoId && nota.asignaturaId === asignaturaId) {
-          notaEncontrada = {
-            ...nota,
-            id: key
-          };
-        }
-      });
-      
-      return notaEncontrada;
+      console.log(`No se encontraron notas para alumno=${alumnoId}, asignatura=${asignaturaId}`);
+      return null;
     } catch (error) {
       console.error("Error al obtener nota de alumno:", error);
       return null;

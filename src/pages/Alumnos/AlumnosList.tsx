@@ -103,18 +103,37 @@ const AlumnosList: React.FC<AlumnosListProps> = ({ onEditAlumno }) => {
     }
   };
 
-  const irANotas = (alumno: Alumno) => {
-    // Si el alumno no está matriculado, mostrar un mensaje
+  const irANotas = async (alumno: Alumno) => {
+    // Ya no es necesario verificar si está matriculado aquí porque el botón estará deshabilitado
+    // Sin embargo, mantenemos la verificación por seguridad
     if (!matriculadosMap[alumno.id]) {
       alert('O alumno non está matriculado en ningunha asignatura');
       return;
     }
     
-    // Guardar el alumno en sessionStorage para recuperarlo en la página de notas
-    sessionStorage.setItem('alumnoSeleccionadoId', alumno.id);
-    
-    // Navegar a la página de notas
-    navigate('/notas');
+    try {
+      // Verificar que el alumno tiene al menos una matrícula activa
+      const matriculas = await dataManager.getMatriculasByAlumno(alumno.id);
+      
+      if (matriculas.length === 0) {
+        // Actualizar el estado local si hay inconsistencia
+        const updatedMap = {...matriculadosMap};
+        updatedMap[alumno.id] = false;
+        setMatriculadosMap(updatedMap);
+        
+        alert('O alumno non está matriculado en ningunha asignatura');
+        return;
+      }
+      
+      // Guardar el alumno en sessionStorage para recuperarlo en la página de notas
+      sessionStorage.setItem('alumnoSeleccionadoId', alumno.id);
+      
+      // Navegar a la página de notas
+      navigate('/notas');
+    } catch (error) {
+      console.error('Error al verificar matrículas del alumno:', error);
+      alert('Ocorreu un erro ao acceder ás notas do alumno');
+    }
   };
 
   if (isLoading) {
@@ -178,7 +197,16 @@ const AlumnosList: React.FC<AlumnosListProps> = ({ onEditAlumno }) => {
                       </button>
                       <button 
                         onClick={() => irANotas(alumno)}
-                        className="text-green-600 hover:text-green-800 mr-2"
+                        className={`mr-2 ${
+                          matriculadosMap[alumno.id] 
+                            ? "text-green-600 hover:text-green-800" 
+                            : "text-gray-400 cursor-not-allowed"
+                        }`}
+                        disabled={!matriculadosMap[alumno.id]}
+                        title={matriculadosMap[alumno.id] 
+                          ? "Ver notas do alumno" 
+                          : "O alumno non está matriculado en ningunha asignatura"
+                        }
                       >
                         Ver notas
                       </button>
@@ -248,7 +276,16 @@ const AlumnosList: React.FC<AlumnosListProps> = ({ onEditAlumno }) => {
                   </button>
                   <button 
                     onClick={() => irANotas(alumno)}
-                    className="text-green-600 hover:text-green-800 text-sm py-1 px-2 border border-green-600 rounded"
+                    className={`text-sm py-1 px-2 border rounded ${
+                      matriculadosMap[alumno.id] 
+                        ? "text-green-600 hover:text-green-800 border-green-600" 
+                        : "text-gray-400 border-gray-300 cursor-not-allowed"
+                    }`}
+                    disabled={!matriculadosMap[alumno.id]}
+                    title={matriculadosMap[alumno.id] 
+                      ? "Ver notas do alumno" 
+                      : "O alumno non está matriculado en ningunha asignatura"
+                    }
                   >
                     Ver notas
                   </button>

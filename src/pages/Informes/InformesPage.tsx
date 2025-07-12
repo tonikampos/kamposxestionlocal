@@ -69,6 +69,17 @@ const InformesPage = () => {
   const [includeContactInfo, setIncludeContactInfo] = useState(false);
   const [orderBy, setOrderBy] = useState('apellidos');
   const [nivelEducativo, setNivelEducativo] = useState('todos');
+  // Nuevos estados para filtros y diseño
+  const [filtroAlumnos, setFiltroAlumnos] = useState('todos');
+  const [busquedaAlumno, setBusquedaAlumno] = useState('');
+  const [colorTema, setColorTema] = useState('azul');
+  // Nuevos estados para el informe de alumnos
+  const [filtroAlumnos, setFiltroAlumnos] = useState('todos');
+  const [busquedaAlumno, setBusquedaAlumno] = useState('');
+  const [colorTema, setColorTema] = useState('azul');
+  const [filtroAlumnos, setFiltroAlumnos] = useState('todos'); // Nuevo estado para filtro de alumnos
+  const [busquedaAlumno, setBusquedaAlumno] = useState(''); // Nuevo estado para búsqueda de alumnos por texto
+  const [colorTema, setColorTema] = useState('azul'); // Nuevo estado para elegir color del tema del informe
   
   // Estado para el modal de previsualización de PDF
   const [showPdfPreview, setShowPdfPreview] = useState(false);
@@ -147,77 +158,170 @@ const InformesPage = () => {
       const alumnosDelProfesor = await dataManager.getAlumnosByProfesor(currentUser.id);
       console.log(`Número de alumnos encontrados: ${alumnosDelProfesor.length}`);
       
+      // Filtrar alumnos según los criterios seleccionados
+      let alumnosFiltrados = [...alumnosDelProfesor];
+      
+      // Filtro por búsqueda de texto
+      if (busquedaAlumno && busquedaAlumno.trim() !== '') {
+        const busquedaLower = busquedaAlumno.toLowerCase();
+        alumnosFiltrados = alumnosFiltrados.filter(alumno => 
+          alumno.nome.toLowerCase().includes(busquedaLower) || 
+          alumno.apelidos.toLowerCase().includes(busquedaLower) ||
+          alumno.email?.toLowerCase().includes(busquedaLower) || 
+          (alumno.telefono && alumno.telefono.toString().includes(busquedaLower))
+        );
+      }
+      
+      // Filtro por asignatura matriculada
+      if (filtroAlumnos && filtroAlumnos !== 'todos') {
+        const alumnosIds = new Set<string>();
+        const matriculas = await dataManager.getMatriculasByAsignatura(filtroAlumnos);
+        
+        matriculas.forEach(matricula => {
+          alumnosIds.add(matricula.alumnoId);
+        });
+        
+        alumnosFiltrados = alumnosFiltrados.filter(alumno => alumnosIds.has(alumno.id));
+      }
+      
       // Ordenar según el criterio seleccionado
       if (orderBy === 'apellidos') {
-        alumnosDelProfesor.sort((a, b) => a.apelidos.localeCompare(b.apelidos));
+        alumnosFiltrados.sort((a, b) => a.apelidos.localeCompare(b.apelidos));
       } else if (orderBy === 'nombre') {
-        alumnosDelProfesor.sort((a, b) => a.nome.localeCompare(b.nome));
+        alumnosFiltrados.sort((a, b) => a.nome.localeCompare(b.nome));
       }
+      
+      console.log(`Alumnos filtrados: ${alumnosFiltrados.length}`);
       
       // Crear PDF
       console.log("Creando documento PDF...");
       const doc = new jsPDF();
       
+      // Configurar colores según el tema seleccionado
+      let colorPrincipal: number[] = [66, 135, 245]; // Azul por defecto
+      let colorSecundario: number[] = [235, 242, 254];
+      let colorTexto: number = 0; // Negro
+      
+      switch (colorTema) {
+        case 'verde':
+          colorPrincipal = [46, 125, 50];
+          colorSecundario = [232, 245, 233];
+          break;
+        case 'morado':
+          colorPrincipal = [106, 27, 154];
+          colorSecundario = [237, 231, 246];
+          break;
+        case 'elegante':
+          colorPrincipal = [33, 33, 33];
+          colorSecundario = [240, 240, 240];
+          break;
+      }
+      
+      // Añadir un encabezado con estilo
+      doc.setFillColor(colorPrincipal[0], colorPrincipal[1], colorPrincipal[2]);
+      doc.rect(0, 0, 210, 30, 'F');
+      
       // Añadir título
-      const title = 'Listado de Alumnos';
-      doc.setFontSize(18);
-      doc.text(title, 14, 22);
+      doc.setFontSize(22);
+      doc.setTextColor(255);
+      doc.text('Listado de Alumnos', 14, 15);
       
-      // Añadir información del profesor
-      doc.setFontSize(12);
-      doc.text(`Profesor: ${currentUser.nome} ${currentUser.apelidos}`, 14, 32);
-      doc.text(`Data: ${new Date().toLocaleDateString('gl-ES')}`, 14, 38);
+      // Añadir información del profesor y fecha
+      doc.setFontSize(11);
+      doc.text(`Profesor: ${currentUser.nome} ${currentUser.apelidos}`, 14, 22);
+      doc.text(`Data: ${new Date().toLocaleDateString('gl-ES')}`, 14, 27);
       
-      // Crear tabla de alumnos con autoTable
+      // Añadir un subtítulo con los filtros aplicados
+      doc.setTextColor(colorPrincipal[0], colorPrincipal[1], colorPrincipal[2]);
+      doc.setFontSize(14);
+      let subtitulo = 'Listado completo';
+      
+      if (filtroAlumnos !== 'todos') {
+        const asignatura = asignaturas.find(a => a.id === filtroAlumnos);
+        if (asignatura) {
+          subtitulo = `Alumnos matriculados en ${asignatura.nome}`;
+        }
+      }
+      
+      if (busquedaAlumno) {
+        subtitulo += ` - Filtro: "${busquedaAlumno}"`;
+      }
+      
+      doc.text(subtitulo, 14, 40);
+      
+      // Información sobre la cantidad de alumnos
+      doc.setFontSize(11);
+      doc.setTextColor(100);
+      doc.text(`Total de alumnos: ${alumnosFiltrados.length}`, 14, 46);
+      
+      // Crear tabla de alumnos con autoTable con diseño mejorado
       const tableColumn = includeContactInfo 
         ? ['Nome', 'Apelidos', 'Email', 'Teléfono'] 
         : ['Nome', 'Apelidos'];
       
-      const tableRows = alumnosDelProfesor.map(alumno => {
+      const tableRows = alumnosFiltrados.map(alumno => {
         if (includeContactInfo) {
-          return [alumno.nome, alumno.apelidos, alumno.email, alumno.telefono || ''];
+          return [alumno.nome, alumno.apelidos, alumno.email || '-', alumno.telefono || '-'];
         } else {
           return [alumno.nome, alumno.apelidos];
         }
       });
       
-      // Intentar usar autoTable si está disponible
+      // Añadir bordes y estilos elegantes a la tabla
       try {
         doc.autoTable({
           head: [tableColumn],
           body: tableRows,
-          startY: 45,
+          startY: 52,
           headStyles: {
-            fillColor: [66, 135, 245],
-            textColor: 255
+            fillColor: colorPrincipal,
+            textColor: 255,
+            fontStyle: 'bold',
+            halign: 'center'
+          },
+          bodyStyles: {
+            textColor: colorTexto,
           },
           alternateRowStyles: {
-            fillColor: [240, 240, 240]
-          }
+            fillColor: colorSecundario
+          },
+          columnStyles: {
+            0: { cellWidth: 35 },
+            1: { cellWidth: 40 },
+          },
+          margin: { top: 52, right: 14, bottom: 20, left: 14 },
+          styles: {
+            cellPadding: 5,
+            fontSize: 10,
+            lineColor: [200, 200, 200],
+            lineWidth: 0.1,
+          },
+          tableLineColor: [80, 80, 80],
+          tableLineWidth: 0.1,
         });
       } catch (tableError) {
         console.warn("Error al generar tabla con autoTable:", tableError);
-        // Fallback: crear una tabla simple si autoTable falla
-        let yPos = 45;
-        doc.setFontSize(11);
-        
-        // Encabezado simple
-        tableColumn.forEach((col, index) => {
-          doc.text(col, 20 + (index * 40), yPos);
-        });
-        yPos += 10;
-        
-        // Datos simples
-        tableRows.forEach(row => {
-          row.forEach((cell, index) => {
-            doc.text(cell, 20 + (index * 40), yPos);
-          });
-          yPos += 7;
-        });
+        alert("Houbo un problema ao xerar a táboa do informe. Proba outra configuración.");
+        return;
+      }
+      
+      // Añadir pie de página
+      // Obtener la cantidad de páginas
+      const numPages = (doc as any).internal.pages.length - 1;
+      for (let i = 1; i <= numPages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(9);
+        doc.setTextColor(150);
+        doc.text(
+          `Kampos Xestión - Páxina ${i} de ${numPages}`, 
+          doc.internal.pageSize.width / 2, 
+          doc.internal.pageSize.height - 10, 
+          { align: 'center' }
+        );
       }
       
       // Mostrar el PDF en el modal en lugar de descargarlo
-      showPdfInModal(doc, `Listado de Alumnos`);
+      showPdfInModal(doc, `Listado_de_Alumnos_${currentUser.nome}`);
       
       console.log("Informe de alumnos generado con éxito");
       return doc; // Retornar el documento por si se necesita en otro lugar
@@ -735,7 +839,7 @@ const InformesPage = () => {
         {selectedReport === 'alumnos' && (
           <div className="mb-6">
             <h3 className="font-medium mb-3">Opcións do informe de alumnos</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Incluír información de contacto
@@ -765,6 +869,80 @@ const InformesPage = () => {
                   <option value="apellidos">Apelidos</option>
                   <option value="nombre">Nome</option>
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Estilo visual do PDF
+                </label>
+                <select 
+                  className="w-full p-2 border border-gray-300 rounded-md"
+                  value={colorTema || 'azul'}
+                  onChange={(e) => setColorTema(e.target.value)}
+                >
+                  <option value="azul">Azul corporativo</option>
+                  <option value="verde">Verde</option>
+                  <option value="morado">Morado</option>
+                  <option value="elegante">Elegante (gris/negro)</option>
+                </select>
+              </div>
+            </div>
+            
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Filtrar alumnos
+                </label>
+                <input
+                  type="text"
+                  placeholder="Buscar por nome ou apelidos..."
+                  className="w-full p-2 border border-gray-300 rounded-md"
+                  value={busquedaAlumno || ''}
+                  onChange={(e) => setBusquedaAlumno(e.target.value)}
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Filtrar por asignatura matriculada
+                </label>
+                <select 
+                  className="w-full p-2 border border-gray-300 rounded-md"
+                  value={filtroAlumnos || 'todos'}
+                  onChange={(e) => setFiltroAlumnos(e.target.value)}
+                >
+                  <option value="todos">Todos os alumnos</option>
+                  {asignaturas.map(asignatura => (
+                    <option key={asignatura.id} value={asignatura.id}>
+                      {asignatura.nome} ({asignatura.nivel} - {asignatura.curso}º)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Filtrar alumnos
+              </label>
+              <div className="flex gap-2">
+                <select 
+                  className="flex-1 p-2 border border-gray-300 rounded-md"
+                  value={filtroAlumnos}
+                  onChange={(e) => setFiltroAlumnos(e.target.value)}
+                >
+                  <option value="todos">Todos</option>
+                  <option value="sin_notas">Sen notas</option>
+                  <option value="con_notas">Con notas</option>
+                </select>
+                
+                <input
+                  type="text"
+                  className="flex-1 p-2 border border-gray-300 rounded-md"
+                  placeholder="Buscar por nome, apelidos, email..."
+                  value={busquedaAlumno}
+                  onChange={(e) => setBusquedaAlumno(e.target.value)}
+                />
               </div>
             </div>
           </div>
@@ -946,7 +1124,7 @@ const InformesPage = () => {
                     link.click();
                     document.body.removeChild(link);
                   }}
-                >
+                ></button>
                   <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                   Descargar PDF
                 </button>
@@ -958,7 +1136,7 @@ const InformesPage = () => {
                     // Abrir en una nueva pestaña
                     window.open(pdfUrl, '_blank');
                   }}
-                >
+                ></button>
                   <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                   Abrir en nova pestana
                 </button>
