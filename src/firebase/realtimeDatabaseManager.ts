@@ -1129,151 +1129,91 @@ class RealtimeDatabaseManager {
     try {      
       console.log(`updateNotaAlumno: Actualizando nota para alumno=${nota.alumnoId}, asignatura=${nota.asignaturaId}`);
       
-      // Primero verificamos si tenemos un ID de nota guardado en nuestro mapa
+      // Manejo simplificado y más robusto
       const mapKey = `${nota.alumnoId}-${nota.asignaturaId}`;
       const savedId = this.lastSavedNotaIdMap[mapKey];
       
-      // Verificar primero si la nota existe ya en Firebase con su ID actual
-      let notaExistsWithCurrentId = false;
-      let datosExistentes: any = null;
+      // Determinar qué ID usar (prioridad: nota.id, savedId, nuevo ID)
+      let idToUse: string | undefined = nota.id;
+      let datosExistentes = null;
       
-      if (nota.id) {
-        const notaRef = ref(db, `notas/${nota.id}`);
-        const snapshot = await get(notaRef);
-        notaExistsWithCurrentId = snapshot.exists();
-        if (notaExistsWithCurrentId) {
-          datosExistentes = snapshot.val();
+      // Verificar si el ID actual existe
+      if (idToUse) {
+        try {
+          const notaRef = ref(db, `notas/${idToUse}`);
+          const snapshot = await get(notaRef);
+          if (snapshot.exists()) {
+            datosExistentes = snapshot.val();
+            console.log(`Usando ID actual existente: ${idToUse}`);
+          } else {
+            console.log(`ID actual ${idToUse} no existe en Firebase`);
+            idToUse = undefined; // Marcar como no válido para intentar con savedId
+          }
+        } catch (err) {
+          console.error(`Error al verificar ID actual:`, err);
+          idToUse = undefined; // Marcar como no válido para intentar con savedId
         }
       }
       
-      // Si el ID actual no existe pero tenemos un ID guardado, verificar si existe el guardado
-      if (!notaExistsWithCurrentId && savedId && savedId !== nota.id) {
-        console.log(`Verificando ID guardado: ${savedId} (diferente del actual: ${nota.id})`);
-        const savedRef = ref(db, `notas/${savedId}`);
-        const savedSnapshot = await get(savedRef);
-        if (savedSnapshot.exists()) {
-          notaExistsWithCurrentId = true;
-          datosExistentes = savedSnapshot.val();
-          console.log(`Encontrado registro con ID guardado: ${savedId}`);
+      // Si el ID actual no es válido pero tenemos un ID guardado, usarlo
+      if (idToUse === undefined && savedId) {
+        try {
+          console.log(`Intentando con ID guardado: ${savedId}`);
+          const notaRef = ref(db, `notas/${savedId}`);
+          const snapshot = await get(notaRef);
+          if (snapshot.exists()) {
+            idToUse = savedId;
+            datosExistentes = snapshot.val();
+            console.log(`Usando ID guardado existente: ${idToUse}`);
+          } else {
+            console.log(`ID guardado ${savedId} no existe en Firebase`);
+          }
+        } catch (err) {
+          console.error(`Error al verificar ID guardado:`, err);
         }
       }
       
-      // Determinar qué ID usar para la actualización
-      let idToUse = nota.id || '';
-      
-      // Si el ID actual no existe pero tenemos un ID guardado, usar el guardado
-      if (!notaExistsWithCurrentId && savedId) {
-        console.log(`Corrigiendo ID de nota: ${nota.id} -> ${savedId} (registro no encontrado con ID actual)`);
-        idToUse = savedId;
+      // Si no tenemos un ID válido, crear uno nuevo
+      if (idToUse === undefined) {
+        try {
+          const newNotaRef = push(ref(db, "notas"));
+          idToUse = newNotaRef.key!;
+          console.log(`Creando nuevo ID para la nota: ${idToUse}`);
+        } catch (err) {
+          console.error(`Error al crear nuevo ID:`, err);
+          throw new Error("No se pudo crear un ID válido para la nota");
+        }
       }
       
-      // Si no tenemos ningún ID válido, crear uno nuevo
-      if (!idToUse || !notaExistsWithCurrentId) {
-        console.log(`No se encontró un ID válido para la nota, creando nuevo registro`);
-        const newNotaRef = push(ref(db, "notas"));
-        idToUse = newNotaRef.key!;
-      }
-      
-      // Preservar los datos existentes si los tenemos, para asegurar que no sobrescribimos valores válidos
-      let notaToUpdate: any = {
-        ...nota,
+      // Preparar datos para guardar (con fecha actualizada)
+      const notaToSave = {
+        alumnoId: nota.alumnoId,
+        asignaturaId: nota.asignaturaId,
+        notasAvaliaciois: nota.notasAvaliaciois || [],
+        notaFinal: nota.notaFinal,
+        createdAt: nota.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
       
-      // Eliminar el campo id para no guardarlo en Firebase
-      const { id, ...notaDataToUpdate } = notaToUpdate;
-      
-      // Verificar si hay valores en cero que podrían estar sobrescribiendo datos válidos
-      let datosFusionados = notaDataToUpdate;
-      
-      // Si tenemos datos existentes, verificar y fusionar para no perder información
-      if (datosExistentes && notaDataToUpdate.notasAvaliaciois) {
-        console.log(`Realizando verificación profunda para evitar sobrescribir datos válidos`);
-        
-        // Aquí implementamos lógica específica para fusionar los datos y evitar sobrescribir con ceros
-        // Este es un caso simplificado; en un caso real, deberías hacer una fusión más inteligente
-        datosFusionados = this.fusionarNotasConExistentes(notaDataToUpdate, datosExistentes);
-      }
-      
-      // Guardar en Firebase con los datos fusionados
+      // No hacemos fusión compleja para evitar problemas
+      // Solo guardamos los datos tal como vienen
       console.log(`Guardando nota con ID: ${idToUse}`);
-      await set(ref(db, `notas/${idToUse}`), datosFusionados);
       
-      // Actualizar el mapa de notas guardadas con el ID utilizado
-      this.lastSavedNotaIdMap[mapKey] = idToUse;
-      
-      console.log(`Nota guardada exitosamente con ID: ${idToUse}`);
+      try {
+        await set(ref(db, `notas/${idToUse}`), notaToSave);
+        
+        // Actualizar el mapa con el ID usado
+        this.lastSavedNotaIdMap[mapKey] = idToUse;
+        
+        console.log(`Nota guardada exitosamente con ID: ${idToUse}`);
+      } catch (saveErr) {
+        console.error("Error al guardar nota:", saveErr);
+        throw saveErr;
+      }
     } catch (error) {
-      console.error("Error al actualizar nota de alumno:", error);
+      console.error("Error general en updateNotaAlumno:", error);
       throw error;
     }
-  }
-  
-  // Método para fusionar notas nuevas con existentes, evitando sobrescribir datos válidos
-  private fusionarNotasConExistentes(notasNuevas: any, notasExistentes: any): any {
-    // Crear copia para no modificar original
-    const resultado = { ...notasNuevas };
-    
-    // Si no hay evaluaciones en las notas nuevas, mantener las existentes
-    if (!resultado.notasAvaliaciois && notasExistentes.notasAvaliaciois) {
-      resultado.notasAvaliaciois = notasExistentes.notasAvaliaciois;
-      return resultado;
-    }
-    
-    // Si no hay evaluaciones existentes, usar las nuevas directamente
-    if (!notasExistentes.notasAvaliaciois) {
-      return resultado;
-    }
-    
-    // Mapa para acceder rápidamente a las evaluaciones existentes por ID
-    const evalExistentesMap = new Map();
-    notasExistentes.notasAvaliaciois.forEach((evaluacion: any) => {
-      evalExistentesMap.set(evaluacion.avaliacionId, evaluacion);
-    });
-    
-    // Recorrer cada evaluación en las notas nuevas
-    resultado.notasAvaliaciois = resultado.notasAvaliaciois.map((evalNueva: any) => {
-      const evalExistente = evalExistentesMap.get(evalNueva.avaliacionId);
-      
-      // Si no hay evaluación existente, usar la nueva directamente
-      if (!evalExistente) return evalNueva;
-      
-      // Mapa para acceder rápidamente a las pruebas existentes por ID
-      const probasExistentesMap = new Map();
-      evalExistente.notasProbas.forEach((proba: any) => {
-        probasExistentesMap.set(proba.probaId, proba);
-      });
-      
-      // Fusionar pruebas, priorizando valores no cero
-      const notasProbasFusionadas = evalNueva.notasProbas.map((probaNueva: any) => {
-        const probaExistente = probasExistentesMap.get(probaNueva.probaId);
-        
-        // Si no hay prueba existente, usar la nueva directamente
-        if (!probaExistente) return probaNueva;
-        
-        // Si la prueba nueva tiene valor 0 pero la existente no, mantener el valor existente
-        if (probaNueva.valor === 0 && probaExistente.valor !== 0) {
-          console.log(`Preservando valor existente ${probaExistente.valor} para prueba ${probaNueva.probaId} (evitando sobrescribir con cero)`);
-          return {
-            ...probaNueva,
-            valor: probaExistente.valor,
-            // Preservar observaciones si están vacías en las nuevas pero no en las existentes
-            observacions: probaNueva.observacions || probaExistente.observacions
-          };
-        }
-        
-        return probaNueva;
-      });
-      
-      return {
-        ...evalNueva,
-        notasProbas: notasProbasFusionadas,
-        // Preservar notaFinal si existe
-        notaFinal: evalNueva.notaFinal !== undefined ? evalNueva.notaFinal : evalExistente.notaFinal
-      };
-    });
-    
-    return resultado;
   }
 
   // Eliminar todas las notas de un alumno en una asignatura
