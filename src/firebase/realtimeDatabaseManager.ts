@@ -871,19 +871,56 @@ class RealtimeDatabaseManager {
       
       if (snapshotByAlumno.exists()) {
         const notasData = snapshotByAlumno.val();
+        const notasCoincidentes: {id: string, nota: any}[] = [];
         
-        // Buscar entre las notas del alumno la correspondiente a la asignatura
+        // Recopilar todas las notas que coincidan con la asignatura
         for (const key of Object.keys(notasData)) {
           const nota = notasData[key];
           if (nota.asignaturaId === asignaturaId) {
-            const notaEncontrada: NotaAlumno = {
-              ...nota,
-              id: key
-            };
-            
-            console.log(`Nota encontrada con ID: ${key}`);
-            return notaEncontrada;
+            notasCoincidentes.push({
+              id: key,
+              nota: nota
+            });
           }
+        }
+        
+        // Si encontramos más de una, reportamos la situación y programamos una limpieza
+        if (notasCoincidentes.length > 1) {
+          console.warn(`¡ALERTA! Se encontraron ${notasCoincidentes.length} notas para el mismo alumno y asignatura`);
+          
+          // Programar una limpieza para el próximo ciclo (no bloqueante)
+          setTimeout(() => {
+            this.eliminarNotasDuplicadas(alumnoId, asignaturaId).catch(err => 
+              console.error("Error al programar limpieza de notas duplicadas:", err)
+            );
+          }, 100);
+          
+          // Ordenar por fecha de actualización (la más reciente primero)
+          notasCoincidentes.sort((a, b) => {
+            const fechaA = a.nota.updatedAt ? new Date(a.nota.updatedAt).getTime() : 0;
+            const fechaB = b.nota.updatedAt ? new Date(b.nota.updatedAt).getTime() : 0;
+            return fechaB - fechaA;
+          });
+          
+          // Devolver la más reciente
+          const notaMasReciente = notasCoincidentes[0];
+          console.log(`Devolviendo la nota más reciente (ID: ${notaMasReciente.id})`);
+          
+          return {
+            ...notaMasReciente.nota,
+            id: notaMasReciente.id
+          };
+        }
+        
+        // Si solo hay una nota, la devolvemos
+        if (notasCoincidentes.length === 1) {
+          const notaEncontrada = notasCoincidentes[0];
+          console.log(`Nota encontrada con ID: ${notaEncontrada.id}`);
+          
+          return {
+            ...notaEncontrada.nota,
+            id: notaEncontrada.id
+          };
         }
       }
       
@@ -923,258 +960,128 @@ class RealtimeDatabaseManager {
     }
   }
   
-  // Inicializar las notas de un alumno en una asignatura
-  async initNotaAlumno(alumnoId: string, asignaturaId: string): Promise<NotaAlumno> {
+  // Método auxiliar para eliminar notas duplicadas
+  async eliminarNotasDuplicadas(alumnoId: string, asignaturaId: string): Promise<void> {
     try {
-      const existingNota = await this.getNotaAlumno(alumnoId, asignaturaId);
-      if (existingNota) return existingNota;
-
-      // Obtener la configuración de evaluación de la asignatura
-      const asignatura = await this.getAsignaturaById(asignaturaId);
-      if (!asignatura || !asignatura.configuracionAvaliacion) {
-        throw new Error('A asignatura non ten configuración de avaliación');
-      }
-
-      // Crear estructura de notas vacía
-      const notasAvaliaciois = asignatura.configuracionAvaliacion.avaliaciois.map(avaliacion => {
-        return {
-          avaliacionId: avaliacion.id,
-          notasProbas: avaliacion.probas.map(proba => {
-            return {
-              probaId: proba.id,
-              valor: 0 // Inicializar con nota 0
-            };
-          })
-        };
-      });
-
-      const now = new Date().toISOString();
-      const nuevaNota = {
-        alumnoId,
-        asignaturaId,
-        notasAvaliaciois,
-        notaFinal: 0, // Inicializar con nota final 0
-        createdAt: now,
-        updatedAt: now
-      };
-
-      // Guardar en la base de datos
-      const newNotaRef = push(ref(db, "notas"));
-      await set(newNotaRef, nuevaNota);
+      console.log(`Iniciando limpieza de notas duplicadas para alumno=${alumnoId}, asignatura=${asignaturaId}`);
       
-      const notaConId = {
-        ...nuevaNota,
-        id: newNotaRef.key!
-      };
+      const notasRefByAlumno = query(ref(db, "notas"), orderByChild("alumnoId"), equalTo(alumnoId));
+      const snapshot = await get(notasRefByAlumno);
       
-      // Ahora vamos a calcular y actualizar las notas iniciales
-      await this.updateNotaAlumno(notaConId);
-      
-      // Recuperar la nota con los cálculos aplicados
-      const notaActualizada = await this.getNotaAlumno(alumnoId, asignaturaId);
-      return notaActualizada || notaConId;
-    } catch (error) {
-      console.error('Error al inicializar notas del alumno:', error);
-      throw new Error('Non se puideron inicializar as notas do alumno');
-    }
-  }
-  
-  // Actualizar nota de un alumno
-  async updateNotaAlumno(nota: NotaAlumno): Promise<void> {
-    try {
-      if (!nota.id) {
-        // Si no tiene ID, es una nueva nota (aunque esto no debería ocurrir si se usa initNotaAlumno)
-        const existingNota = await this.getNotaAlumno(nota.alumnoId, nota.asignaturaId);
-        
-        if (existingNota) {
-          nota.id = existingNota.id;
-        } else {
-          const now = new Date().toISOString();
-          const nuevaNota = {
-            ...nota,
-            createdAt: now,
-            updatedAt: now
-          };
-          
-          const newNotaRef = push(ref(db, "notas"));
-          await set(newNotaRef, nuevaNota);
-          nota.id = newNotaRef.key!;
-        }
-      }
-      
-      // Actualizar la nota con los cálculos necesarios
-      const asignatura = await this.getAsignaturaById(nota.asignaturaId);
-      if (!asignatura || !asignatura.configuracionAvaliacion) {
-        throw new Error('No se encontró la configuración de evaluación');
-      }
-      
-      // Recalcular notas finales de cada evaluación y del curso
-      const notaCalculada = this.calcularNotasFinales(nota, asignatura.configuracionAvaliacion);
-      notaCalculada.updatedAt = new Date().toISOString();
-      
-      // Actualizar la nota en la base de datos
-      const notaRef = ref(db, `notas/${nota.id}`);
-      await update(notaRef, notaCalculada);
-      
-      // Registrar en el mapa la última nota guardada para facilitar la recuperación inmediata
-      const clave = `${nota.alumnoId}-${nota.asignaturaId}`;
-      this.lastSavedNotaIdMap[clave] = nota.id;
-      console.log(`Registrado ID de nota en mapa: ${clave} -> ${nota.id}`);
-      
-      return;
-    } catch (error) {
-      console.error('Error al actualizar nota del alumno:', error);
-      throw new Error('Non se puideron actualizar as notas do alumno');
-    }
-  }
-  
-  // Eliminar notas de un alumno en una asignatura
-  async eliminarNotasAlumnoAsignatura(alumnoId: string, asignaturaId: string): Promise<void> {
-    try {
-      const nota = await this.getNotaAlumno(alumnoId, asignaturaId);
-      
-      if (nota && nota.id) {
-        await remove(ref(db, `notas/${nota.id}`));
-      }
-    } catch (error) {
-      console.error("Error al eliminar notas:", error);
-      throw error;
-    }
-  }
-  
-  // Obtener todas las notas
-  async getNotas(): Promise<NotaAlumno[]> {
-    try {
-      const notasRef = ref(db, "notas");
-      const snapshot = await get(notasRef);
-      
-      if (!snapshot.exists()) {
-        return [];
-      }
+      if (!snapshot.exists()) return;
       
       const notasData = snapshot.val();
+      const notasCoincidentes: {id: string, updatedAt: string}[] = [];
       
-      // Convertir objeto a array
-      return Object.keys(notasData).map(key => ({
-        ...notasData[key],
-        id: key
-      }));
-    } catch (error) {
-      console.error("Error al obtener notas:", error);
-      return [];
-    }
-  }
-  
-  // Obtener notas por asignatura
-  async getNotasAsignatura(asignaturaId: string): Promise<NotaAlumno[]> {
-    try {
-      const notasRef = ref(db, "notas");
-      const snapshot = await get(notasRef);
-      
-      if (!snapshot.exists()) {
-        return [];
-      }
-      
-      const notasData = snapshot.val();
-      const notasAsignatura: NotaAlumno[] = [];
-      
-      // Filtrar notas por asignatura
-      Object.keys(notasData).forEach(key => {
+      // Recopilar todas las notas coincidentes con sus fechas
+      for (const key of Object.keys(notasData)) {
         const nota = notasData[key];
         if (nota.asignaturaId === asignaturaId) {
-          notasAsignatura.push({
-            ...nota,
-            id: key
+          notasCoincidentes.push({
+            id: key,
+            updatedAt: nota.updatedAt || ''
           });
-        }
-      });
-      
-      return notasAsignatura;
-    } catch (error) {
-      console.error("Error al obtener notas por asignatura:", error);
-      return [];
-    }
-  }
-  
-  // Método para calcular las notas finales de evaluaciones y curso
-  private calcularNotasFinales(nota: NotaAlumno, configuracionAvaliacion: ConfiguracionAvaliacion): NotaAlumno {
-    // Crear una copia para no mutar el original
-    const notaCalculada = { ...nota };
-    
-    // Calcular la nota final de cada evaluación
-    if (notaCalculada.notasAvaliaciois && Array.isArray(notaCalculada.notasAvaliaciois)) {
-      notaCalculada.notasAvaliaciois = notaCalculada.notasAvaliaciois.map(notaEval => {
-        // Encontrar la configuración de esta evaluación
-        const configEval = configuracionAvaliacion.avaliaciois.find(
-          config => config.id === notaEval.avaliacionId
-        );
-        
-        if (!configEval) return notaEval; // Si no hay config, dejamos la nota igual
-        
-        // Calcular nota final de la evaluación basándose en las notas de las pruebas
-        let notaFinalEval = 0;
-        let sumaPorcentajes = 0;
-        
-        if (notaEval.notasProbas && Array.isArray(notaEval.notasProbas)) {
-          notaEval.notasProbas.forEach(notaProba => {
-            // Encontrar la configuración de esta prueba
-            const configProba = configEval.probas.find(p => p.id === notaProba.probaId);
-            if (configProba) {
-              notaFinalEval += (notaProba.valor * configProba.porcentaxe) / 100;
-              sumaPorcentajes += configProba.porcentaxe;
-            }
-          });
-          
-          // Normalizar si los porcentajes no suman 100
-          if (sumaPorcentajes > 0 && sumaPorcentajes !== 100) {
-            notaFinalEval = (notaFinalEval * 100) / sumaPorcentajes;
-          }
-          
-          // Asegurarse de que la nota está dentro del rango válido (0-10)
-          notaFinalEval = Math.max(0, Math.min(10, notaFinalEval));
-        }
-        
-        // Redondear a 2 decimales
-        notaFinalEval = Math.round(notaFinalEval * 100) / 100;
-        
-        return {
-          ...notaEval,
-          notaFinal: notaFinalEval
-        };
-      });
-    }
-    
-    // Calcular la nota final del curso basado en las notas de las evaluaciones
-    let notaFinalCurso = 0;
-    let sumaPorcentajesEval = 0;
-    
-    notaCalculada.notasAvaliaciois?.forEach(notaEval => {
-      if (notaEval.notaFinal !== undefined) {
-        const configEval = configuracionAvaliacion.avaliaciois.find(
-          config => config.id === notaEval.avaliacionId
-        );
-        
-        if (configEval && configEval.porcentaxeNota) {
-          notaFinalCurso += (notaEval.notaFinal * configEval.porcentaxeNota) / 100;
-          sumaPorcentajesEval += configEval.porcentaxeNota;
         }
       }
-    });
-    
-    // Normalizar si los porcentajes no suman 100
-    if (sumaPorcentajesEval > 0 && sumaPorcentajesEval !== 100) {
-      notaFinalCurso = (notaFinalCurso * 100) / sumaPorcentajesEval;
+      
+      // Si hay más de una nota, mantener solo la más reciente
+      if (notasCoincidentes.length > 1) {
+        // Ordenar por fecha (más reciente primero)
+        notasCoincidentes.sort((a, b) => {
+          const fechaA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+          const fechaB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+          return fechaB - fechaA;
+        });
+        
+        // Mantener la primera (más reciente) y eliminar las demás
+        const notaAMantener = notasCoincidentes[0].id;
+        console.log(`Manteniendo la nota más reciente con ID: ${notaAMantener}`);
+        
+        // Eliminar duplicados
+        for (let i = 1; i < notasCoincidentes.length; i++) {
+          const idEliminar = notasCoincidentes[i].id;
+          console.log(`Eliminando nota duplicada con ID: ${idEliminar}`);
+          await remove(ref(db, `notas/${idEliminar}`));
+        }
+        
+        // Actualizar mapa de notas guardadas
+        this.lastSavedNotaIdMap[`${alumnoId}-${asignaturaId}`] = notaAMantener;
+      }
+    } catch (error) {
+      console.error("Error al eliminar notas duplicadas:", error);
     }
-    
-    // Asegurarse de que la nota está dentro del rango válido (0-10)
-    notaFinalCurso = Math.max(0, Math.min(10, notaFinalCurso));
-    
-    // Redondear a 2 decimales
-    notaFinalCurso = Math.round(notaFinalCurso * 100) / 100;
-    
-    notaCalculada.notaFinal = notaFinalCurso;
-    
-    return notaCalculada;
+  }
+
+  // Limpiar todas las notas duplicadas en la base de datos
+  async limpiarNotasDuplicadas(): Promise<void> {
+    try {
+      console.log("Iniciando limpieza de notas duplicadas en toda la base de datos...");
+      
+      // Obtener todas las notas
+      const notasRef = ref(db, "notas");
+      const snapshot = await get(notasRef);
+      
+      if (!snapshot.exists()) {
+        console.log("No hay notas para limpiar");
+        return;
+      }
+      
+      const notasData = snapshot.val();
+      
+      // Agrupar notas por combinación alumno-asignatura
+      const notasPorCombinacion: Record<string, Array<{id: string, nota: any}>> = {};
+      
+      for (const key of Object.keys(notasData)) {
+        const nota = notasData[key];
+        if (nota.alumnoId && nota.asignaturaId) {
+          const combinacion = `${nota.alumnoId}-${nota.asignaturaId}`;
+          
+          if (!notasPorCombinacion[combinacion]) {
+            notasPorCombinacion[combinacion] = [];
+          }
+          
+          notasPorCombinacion[combinacion].push({
+            id: key,
+            nota: nota
+          });
+        }
+      }
+      
+      // Identificar y eliminar duplicados
+      let totalCombinaciones = 0;
+      let totalDuplicadosEliminados = 0;
+      
+      for (const combinacion of Object.keys(notasPorCombinacion)) {
+        totalCombinaciones++;
+        const notas = notasPorCombinacion[combinacion];
+        
+        if (notas.length > 1) {
+          // Ordenar por fecha de actualización (más reciente primero)
+          notas.sort((a, b) => {
+            const fechaA = a.nota.updatedAt ? new Date(a.nota.updatedAt).getTime() : 0;
+            const fechaB = b.nota.updatedAt ? new Date(b.nota.updatedAt).getTime() : 0;
+            return fechaB - fechaA;
+          });
+          
+          // Mantener la primera y eliminar las demás
+          const notaAMantener = notas[0].id;
+          console.log(`Combinación ${combinacion}: Manteniendo nota ${notaAMantener}, eliminando ${notas.length - 1} duplicados`);
+          
+          for (let i = 1; i < notas.length; i++) {
+            await remove(ref(db, `notas/${notas[i].id}`));
+            totalDuplicadosEliminados++;
+          }
+          
+          // Actualizar el mapa de notas
+          const [alumnoId, asignaturaId] = combinacion.split('-');
+          this.lastSavedNotaIdMap[combinacion] = notaAMantener;
+        }
+      }
+      
+      console.log(`Limpieza completada: ${totalCombinaciones} combinaciones revisadas, ${totalDuplicadosEliminados} duplicados eliminados`);
+    } catch (error) {
+      console.error("Error al limpiar notas duplicadas:", error);
+    }
   }
 }
 

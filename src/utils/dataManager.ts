@@ -175,6 +175,11 @@ class DataManager {
   async getAlumnosMatriculadosEnAsignatura(asignaturaId: string): Promise<Alumno[]> {
     return this.getAlumnosByAsignatura(asignaturaId);
   }
+
+  async limpiarNotasDuplicadas(): Promise<void> {
+    console.log('dataManager: iniciando limpieza de notas duplicadas');
+    return realtimeDatabaseManager.limpiarNotasDuplicadas();
+  }
 }
 
 export const dataManager = new DataManager();

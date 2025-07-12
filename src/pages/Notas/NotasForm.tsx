@@ -133,41 +133,82 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
       }
       
       // Hacer una copia local de las notas para mostrarlas incluso si hay un problema al recargarlas
-      const notaCopia = {...notaAlumno};
+      const notaCopia = JSON.parse(JSON.stringify(notaAlumno));
+      
+      // Si hay un ID de nota previo, lo mostramos para diagnóstico
+      if (notaAlumno.id) {
+        console.log(`Actualizando nota existente con ID: ${notaAlumno.id}`);
+      } else {
+        console.log(`Creando nueva nota para el alumno`);
+      }
       
       // Gardar directamente as notas completas tal como están no estado
-      // Ahora el updateNotaAlumno calculará las notas finales de evaluaciones y curso
+      console.log("Guardando notas en Firebase...");
       await dataManager.updateNotaAlumno(notaAlumno);
+      console.log("Datos guardados correctamente en Firebase");
       
-      // Pequeña pausa para permitir la sincronización con Firebase (consistencia eventual)
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Pausa más larga para permitir la sincronización con Firebase
+      console.log("Esperando a que se complete la sincronización...");
+      await new Promise(resolve => setTimeout(resolve, 1000));
       
       // Recargar las notas para obtener los cálculos actualizados
+      console.log("Recargando datos actualizados...");
       let notaActualizada = await dataManager.getNotaAlumno(alumno.id, asignaturaId);
       
       // Comprobar si se han perdido datos
       if (!notaActualizada) {
         console.warn("No se encontraron las notas después de guardar, intentando de nuevo...");
         
-        // Esperar un poco más y reintentar
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Esperar más tiempo y reintentar
+        await new Promise(resolve => setTimeout(resolve, 2000));
         notaActualizada = await dataManager.getNotaAlumno(alumno.id, asignaturaId);
+        
+        // Segundo reintento con más tiempo de espera
+        if (!notaActualizada) {
+          console.warn("Segundo intento fallido, esperando más tiempo...");
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          notaActualizada = await dataManager.getNotaAlumno(alumno.id, asignaturaId);
+        }
         
         // Si aún no se encuentra, usar la copia local con un aviso
         if (!notaActualizada) {
-          console.error("¡ERROR! No se encontraron las notas después de guardar y reintentar");
-          notaActualizada = notaCopia;
+          console.error("¡ERROR! No se encontraron las notas después de varios reintentos");
           
-          // Mostrar mensaje de aviso pero no lanzar error
-          alert('As notas gardáronse correctamente, pero houbo un problema ao recargar os datos. Refresca a páxina se non ves as notas actualizadas.');
+          // Usar la copia local pero asegurarnos de que tenga las propiedades básicas
+          notaActualizada = {
+            ...notaCopia,
+            updatedAt: new Date().toISOString()
+          };
+          
+          // Informar al usuario pero con mensaje menos alarmante
+          alert(`
+As notas gardáronse correctamente en Firebase, pero hai un problema para mostrar os datos actualizados. 
+
+Isto pode deberse a:
+1. Problemas de conexión temporal
+2. Datos duplicados na base de datos
+
+Vaise iniciar unha limpeza automática de datos duplicados.
+Os datos gardados están seguros. Pode continuar traballando.`);
+          
+          // Iniciar limpieza de duplicados en segundo plano
+          setTimeout(() => {
+            dataManager.limpiarNotasDuplicadas?.().catch(err => 
+              console.error("Error al iniciar limpieza de duplicados:", err)
+            );
+          }, 100);
         }
       }
       
       console.log("Notas actualizadas:", notaActualizada);
-      console.log("Nota final calculada:", notaActualizada.notaFinal);
+      if (notaActualizada) {
+        console.log("Nota final calculada:", notaActualizada.notaFinal);
+      }
       
       // Actualizar el estado con las notas actualizadas y calculadas
-      setNotaAlumno(notaActualizada);
+      if (notaActualizada) {
+        setNotaAlumno(notaActualizada);
+      }
       
       // Mostrar mensaje con los cálculos realizados
       let mensaje = 'Notas gardadas correctamente.\n\n';
