@@ -125,18 +125,41 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
       // Hacer una copia profunda de las notas actuales
       const notaCopia = JSON.parse(JSON.stringify(notaAlumno)) as NotaAlumno;
       
+      console.log("Guardando notas:", {
+        alumnoId: notaCopia.alumnoId,
+        asignaturaId: notaCopia.asignaturaId,
+        id: notaCopia.id,
+        evaluaciones: notaCopia.notasAvaliaciois.length
+      });
+      
       // Guardar las notas en Firebase directamente
       await dataManager.updateNotaAlumno(notaCopia);
       
       // Breve pausa para permitir sincronización
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 800));
       
-      // Recargar las notas
-      let notaActualizada = await dataManager.getNotaAlumno(alumno.id, asignaturaId);
+      // Intentar recargar las notas con múltiples intentos si es necesario
+      let notaActualizada: NotaAlumno | null = null;
+      let intentos = 0;
+      const maxIntentos = 3;
+      
+      while (!notaActualizada && intentos < maxIntentos) {
+        intentos++;
+        console.log(`Recargando notas (intento ${intentos}/${maxIntentos})...`);
+        
+        notaActualizada = await dataManager.getNotaAlumno(alumno.id, asignaturaId);
+        
+        if (!notaActualizada && intentos < maxIntentos) {
+          // Esperar un poco más antes del siguiente intento
+          await new Promise(resolve => setTimeout(resolve, 500 * intentos));
+        }
+      }
       
       if (!notaActualizada) {
-        // Si no se pudo recargar, usamos la copia local
+        console.warn("No se pudieron recargar las notas después del guardado. Usando copia local.");
         notaActualizada = notaCopia;
+      } else {
+        console.log("Notas recargadas correctamente después del guardado.");
       }
       
       // Actualizar el estado con las notas actualizadas
@@ -169,7 +192,7 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
   
   // Inicializar las notas si no existen para todas las evaluaciones
   if (notaAlumno.notasAvaliaciois.length < asignatura.configuracionAvaliacion.avaliaciois.length) {
-    console.log("Faltan evaluaciones en las notas del alumno. Inicializando...");
+    console.log("Faltan evaluaciones en las notas del alumno. Inicializando solo las evaluaciones faltantes...");
     
     // Crear un array con las evaluaciones que faltan
     asignatura.configuracionAvaliacion.avaliaciois.forEach(avaliacion => {
@@ -177,6 +200,7 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
       const existeEvaluacion = notaAlumno.notasAvaliaciois.some(na => na.avaliacionId === avaliacion.id);
       
       if (!existeEvaluacion) {
+        console.log(`Añadiendo evaluación faltante: ${avaliacion.id} (${avaliacion.numero}ª Evaluación)`);
         // Crear evaluación con sus pruebas inicializadas
         const notasProbas = avaliacion.probas.map(proba => ({
           probaId: proba.id,
@@ -203,6 +227,7 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
           const existeProba = notaAval.notasProbas.some(np => np.probaId === proba.id);
           
           if (!existeProba) {
+            console.log(`Añadiendo prueba faltante en evaluación ${avaliacion.id}: ${proba.id} (${proba.nome})`);
             // Añadir la prueba que falta
             notaAval.notasProbas.push({
               probaId: proba.id,

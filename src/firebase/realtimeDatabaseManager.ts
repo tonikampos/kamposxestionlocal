@@ -884,7 +884,7 @@ class RealtimeDatabaseManager {
           }
         }
         
-        // Si encontramos más de una, usamos la más reciente y eliminamos las demás silenciosamente
+        // Si encontramos más de una, usamos la más reciente sin eliminar nada
         if (notasCoincidentes.length > 1) {
           // Ordenar por fecha de actualización (la más reciente primero)
           notasCoincidentes.sort((a, b) => {
@@ -893,21 +893,9 @@ class RealtimeDatabaseManager {
             return fechaB - fechaA;
           });
           
-          // Eliminar duplicados en segundo plano sin mostrar mensajes
-          const duplicadosAEliminar = notasCoincidentes.slice(1);
-          if (duplicadosAEliminar.length > 0) {
-            (async () => {
-              try {
-                for (const item of duplicadosAEliminar) {
-                  await remove(ref(db, `notas/${item.id}`));
-                }
-              } catch (err) {
-                // Error silencioso
-              }
-            })();
-          }
+          console.log(`Se encontraron ${notasCoincidentes.length} registros de notas para alumno=${alumnoId}, asignatura=${asignaturaId}. Usando el más reciente (${notasCoincidentes[0].id})`);
           
-          // Devolver la más reciente
+          // Devolver la más reciente sin eliminar nada
           const notaMasReciente = notasCoincidentes[0];
           this.lastSavedNotaIdMap[`${alumnoId}-${asignaturaId}`] = notaMasReciente.id;
           
@@ -1045,15 +1033,27 @@ class RealtimeDatabaseManager {
   // Actualizar la nota de un alumno
   async updateNotaAlumno(nota: NotaAlumno): Promise<void> {
     try {      
+      console.log(`updateNotaAlumno: Actualizando nota para alumno=${nota.alumnoId}, asignatura=${nota.asignaturaId}`);
+      
       // Primero verificamos si tenemos un ID de nota guardado en nuestro mapa
       const mapKey = `${nota.alumnoId}-${nota.asignaturaId}`;
       const savedId = this.lastSavedNotaIdMap[mapKey];
       
-      // Si el ID que tenemos en el objeto nota no coincide con el ID en nuestro mapa
-      // y tenemos un ID guardado, usamos el ID guardado para prevenir duplicados
-      if (savedId && nota.id !== savedId) {
-        console.log(`Corrigiendo ID de nota: ${nota.id} -> ${savedId}`);
-        nota.id = savedId;
+      // Verificar primero si la nota existe ya en Firebase con su ID actual
+      let notaExistsWithCurrentId = false;
+      if (nota.id) {
+        const notaRef = ref(db, `notas/${nota.id}`);
+        const snapshot = await get(notaRef);
+        notaExistsWithCurrentId = snapshot.exists();
+      }
+      
+      // Determinar qué ID usar para la actualización
+      let idToUse = nota.id;
+      
+      // Si el ID actual no existe pero tenemos un ID guardado, usar el guardado
+      if (!notaExistsWithCurrentId && savedId) {
+        console.log(`Corrigiendo ID de nota: ${nota.id} -> ${savedId} (registro no encontrado con ID actual)`);
+        idToUse = savedId;
       }
       
       // Actualizar la fecha de modificación
@@ -1066,10 +1066,11 @@ class RealtimeDatabaseManager {
       const { id, ...notaData } = notaToUpdate;
       
       // Guardar en Firebase
-      await set(ref(db, `notas/${id}`), notaData);
+      console.log(`Guardando nota con ID: ${idToUse}`);
+      await set(ref(db, `notas/${idToUse}`), notaData);
       
       // Actualizar el mapa de notas guardadas
-      this.lastSavedNotaIdMap[mapKey] = id;
+      this.lastSavedNotaIdMap[mapKey] = idToUse;
     } catch (error) {
       console.error("Error al actualizar nota de alumno:", error);
       throw error;
