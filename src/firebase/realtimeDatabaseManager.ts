@@ -1,6 +1,7 @@
 import { ref, get, set, push, remove, query, orderByChild, equalTo, update, child } from "firebase/database";
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { db, auth } from "../firebase/config";
+import { ErrorHandler } from '../utils/errorHandler';
 import type { 
   Alumno, 
   Asignatura, 
@@ -859,106 +860,126 @@ class RealtimeDatabaseManager {
   // Obtener nota de un alumno en una asignatura
   async getNotaAlumno(alumnoId: string, asignaturaId: string, retryCount = 0): Promise<NotaAlumno | null> {
     try {
-      console.log(`Buscando notas para alumno=${alumnoId}, asignatura=${asignaturaId}`);
+      console.log(`[getNotaAlumno] Buscando notas para alumno=${alumnoId}, asignatura=${asignaturaId}`);
       
-      // Verificar primero usando el mapa de IDs guardados, que es nuestra fuente de verdad más fiable
+      // Verificar primero usando el mapa de IDs guardados
       const mapKey = `${alumnoId}-${asignaturaId}`;
       const savedId = this.lastSavedNotaIdMap[mapKey];
       
-      // Si tenemos un ID guardado, intentar recuperar directamente por ese ID primero
+      // Si tenemos un ID guardado, intentar recuperar directamente
       if (savedId) {
-        console.log(`Intentando recuperar nota usando ID guardado: ${savedId}`);
-        const notaRefById = ref(db, `notas/${savedId}`);
-        const snapshotById = await get(notaRefById);
-        
-        if (snapshotById.exists()) {
-          const notaData = snapshotById.val();
-          const notaEncontrada: NotaAlumno = {
-            ...notaData,
-            id: savedId
-          };
-          console.log(`Nota recuperada exitosamente por ID guardado: ${savedId}`);
-          // Verificar y reparar si las notas están en cero pero sabemos que deberían tener valores
-          if (this.deberiaComprobarCeros(notaEncontrada)) {
-            console.log(`Verificando si las notas están incorrectamente en cero...`);
-            // Aquí podríamos implementar lógica adicional para verificar si los datos son correctos
+        console.log(`[getNotaAlumno] Intentando recuperar nota usando ID guardado: ${savedId}`);
+        try {
+          const notaRefById = ref(db, `notas/${savedId}`);
+          const snapshotById = await get(notaRefById);
+          
+          if (snapshotById.exists()) {
+            const notaData = snapshotById.val();
+            const notaEncontrada: NotaAlumno = {
+              ...notaData,
+              id: savedId
+            };
+            console.log(`[getNotaAlumno] ✅ Nota recuperada exitosamente por ID guardado: ${savedId}`);
+            return notaEncontrada;
+          } else {
+            console.log(`[getNotaAlumno] ⚠️ El ID guardado ${savedId} ya no existe, buscando alternativas...`);
+            // Limpiar el ID inválido del mapa
+            delete this.lastSavedNotaIdMap[mapKey];
           }
-          return notaEncontrada;
-        } else {
-          console.log(`El ID guardado ${savedId} ya no existe en Firebase, buscando alternativas...`);
+        } catch (error) {
+          console.error(`[getNotaAlumno] Error al buscar por ID guardado:`, error);
+          // Limpiar el ID problemático del mapa
+          delete this.lastSavedNotaIdMap[mapKey];
         }
       }
       
-      // Si no tenemos ID guardado o no se encontró, buscar por índices
-      console.log(`Buscando nota por índice de alumno...`);
-      const notasRefByAlumno = query(ref(db, "notas"), orderByChild("alumnoId"), equalTo(alumnoId));
-      const snapshotByAlumno = await get(notasRefByAlumno);
+      // BÚSQUEDA MANUAL: Obtener TODAS las notas y filtrar manualmente
+      console.log(`[getNotaAlumno] 🔍 Realizando búsqueda manual entre todas las notas...`);
+      const todasNotasRef = ref(db, "notas");
+      const allNotasSnapshot = await get(todasNotasRef);
       
-      if (snapshotByAlumno.exists()) {
-        const notasData = snapshotByAlumno.val();
-        const notasCoincidentes: {id: string, nota: any}[] = [];
-        
-        // Recopilar todas las notas que coincidan con la asignatura
-        for (const key of Object.keys(notasData)) {
-          const nota = notasData[key];
-          if (nota.asignaturaId === asignaturaId) {
-            notasCoincidentes.push({
-              id: key,
-              nota: nota
-            });
-          }
-        }
-        
-        console.log(`Encontradas ${notasCoincidentes.length} notas coincidentes por índice`);
-        
-        // Si encontramos más de una, usamos la más reciente sin eliminar nada
-        if (notasCoincidentes.length > 1) {
-          // Ordenar por fecha de actualización (la más reciente primero)
-          notasCoincidentes.sort((a, b) => {
-            const fechaA = a.nota.updatedAt ? new Date(a.nota.updatedAt).getTime() : 0;
-            const fechaB = b.nota.updatedAt ? new Date(b.nota.updatedAt).getTime() : 0;
-            return fechaB - fechaA;
+      if (!allNotasSnapshot.exists()) {
+        console.log('[getNotaAlumno] 📭 No hay notas en la base de datos');
+        return null;
+      }
+      
+      const todasNotas = allNotasSnapshot.val();
+      const totalNotas = Object.keys(todasNotas).length;
+      console.log(`[getNotaAlumno] 📊 Total de notas en la base de datos: ${totalNotas}`);
+      
+      // Filtrar manualmente las notas por alumnoId y asignaturaId
+      const notasCoincidentes: {id: string, nota: any}[] = [];
+      let notasRevisadas = 0;
+      
+      for (const [key, nota] of Object.entries(todasNotas)) {
+        notasRevisadas++;
+        if (nota && typeof nota === 'object' && (nota as any).alumnoId === alumnoId && (nota as any).asignaturaId === asignaturaId) {
+          notasCoincidentes.push({
+            id: key,
+            nota: nota
           });
-          
-          console.log(`Se encontraron ${notasCoincidentes.length} registros de notas para alumno=${alumnoId}, asignatura=${asignaturaId}. Usando el más reciente (${notasCoincidentes[0].id})`);
-          
-          // Actualizar nuestro mapa de IDs con el ID más reciente
-          const notaMasReciente = notasCoincidentes[0];
-          this.lastSavedNotaIdMap[mapKey] = notaMasReciente.id;
-          
-          return {
-            ...notaMasReciente.nota,
-            id: notaMasReciente.id
-          };
-        }
-        
-        // Si solo hay una nota, la devolvemos
-        if (notasCoincidentes.length === 1) {
-          const notaEncontrada = notasCoincidentes[0];
-          console.log(`Nota encontrada con ID: ${notaEncontrada.id}`);
-          
-          // Actualizar nuestro mapa de IDs con este ID
-          this.lastSavedNotaIdMap[mapKey] = notaEncontrada.id;
-          
-          return {
-            ...notaEncontrada.nota,
-            id: notaEncontrada.id
-          };
+          console.log(`[getNotaAlumno] 🎯 Nota coincidente encontrada: ${key}`);
         }
       }
       
-      // Si después de los intentos anteriores no se encuentra, y estamos dentro del límite de reintentos
-      if (retryCount < 3) {
-        console.log(`Reintentando obtener nota (intento ${retryCount + 1}/3)...`);
-        // Esperar un tiempo antes de reintentar (aumentando con cada intento)
-        await new Promise(resolve => setTimeout(resolve, 500 * (retryCount + 1)));
+      console.log(`[getNotaAlumno] 📈 Revisadas ${notasRevisadas} notas, encontradas ${notasCoincidentes.length} coincidencias`);
+      
+      // Si encontramos más de una, usamos la más reciente
+      if (notasCoincidentes.length > 1) {
+        console.log(`[getNotaAlumno] ⚠️ Múltiples notas encontradas (${notasCoincidentes.length}), seleccionando la más reciente`);
+        
+        // Ordenar por fecha de actualización (la más reciente primero)
+        notasCoincidentes.sort((a, b) => {
+          const fechaA = a.nota.updatedAt ? new Date(a.nota.updatedAt).getTime() : 0;
+          const fechaB = b.nota.updatedAt ? new Date(b.nota.updatedAt).getTime() : 0;
+          return fechaB - fechaA;
+        });
+        
+        const notaMasReciente = notasCoincidentes[0];
+        this.lastSavedNotaIdMap[mapKey] = notaMasReciente.id;
+        
+        console.log(`[getNotaAlumno] ✅ Usando nota más reciente: ${notaMasReciente.id}`);
+        return {
+          ...notaMasReciente.nota,
+          id: notaMasReciente.id
+        };
+      }
+      
+      // Si solo hay una nota, la devolvemos
+      if (notasCoincidentes.length === 1) {
+        const notaEncontrada = notasCoincidentes[0];
+        console.log(`[getNotaAlumno] ✅ Nota única encontrada: ${notaEncontrada.id}`);
+        
+        // Guardar el ID en el mapa para futuras búsquedas
+        this.lastSavedNotaIdMap[mapKey] = notaEncontrada.id;
+        
+        return {
+          ...notaEncontrada.nota,
+          id: notaEncontrada.id
+        };
+      }
+      
+      // Si no se encontró nada y podemos reintentar
+      if (retryCount < 1) {
+        console.log(`[getNotaAlumno] 🔄 Reintentando búsqueda (intento ${retryCount + 1}/1)...`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
         return this.getNotaAlumno(alumnoId, asignaturaId, retryCount + 1);
       }
       
-      console.log(`No se encontraron notas para alumno=${alumnoId}, asignatura=${asignaturaId} después de ${retryCount} reintentos`);
+      console.log(`[getNotaAlumno] ❌ No se encontraron notas para alumno=${alumnoId}, asignatura=${asignaturaId}`);
       return null;
+      
     } catch (error) {
-      console.error("Error al obtener nota de alumno:", error);
+      ErrorHandler.logError('getNotaAlumno', error, { alumnoId, asignaturaId, retryCount });
+      console.error(`[getNotaAlumno] ❌ Error al obtener nota de alumno:`, error);
+      
+      // En caso de error, si podemos reintentar, hacerlo
+      if (retryCount < 1) {
+        console.log(`[getNotaAlumno] 🔄 Reintentando tras error (intento ${retryCount + 1}/1)...`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        return this.getNotaAlumno(alumnoId, asignaturaId, retryCount + 1);
+      }
+      
       return null;
     }
   }
@@ -1084,13 +1105,13 @@ class RealtimeDatabaseManager {
         };
       });
 
-      const notaData: Omit<NotaAlumno, "id"> = {
+      const notaData: Omit<NotaAlumno, "id"> = this.cleanUndefinedValues({
         alumnoId,
         asignaturaId,
         notasAvaliaciois: notasAvaliaciois,
         createdAt: now,
         updatedAt: now
-      };
+      });
 
       // Comprobar si ya tenemos un ID guardado en el mapa
       const mapKey = `${alumnoId}-${asignaturaId}`;
@@ -1119,6 +1140,7 @@ class RealtimeDatabaseManager {
         };
       }
     } catch (error) {
+      ErrorHandler.logError('initNotaAlumno', error, { alumnoId, asignaturaId });
       console.error("Error al inicializar nota de alumno:", error);
       throw error;
     }
@@ -1186,18 +1208,18 @@ class RealtimeDatabaseManager {
       }
       
       // Preparar datos para guardar (con fecha actualizada)
-      const notaToSave = {
+      const notaToSave = this.cleanUndefinedValues({
         alumnoId: nota.alumnoId,
         asignaturaId: nota.asignaturaId,
         notasAvaliaciois: nota.notasAvaliaciois || [],
         notaFinal: nota.notaFinal,
         createdAt: nota.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString()
-      };
+      });
       
       // No hacemos fusión compleja para evitar problemas
       // Solo guardamos los datos tal como vienen
-      console.log(`Guardando nota con ID: ${idToUse}`);
+      console.log(`Guardando nota con ID: ${idToUse}`, notaToSave);
       
       try {
         await set(ref(db, `notas/${idToUse}`), notaToSave);
@@ -1208,9 +1230,11 @@ class RealtimeDatabaseManager {
         console.log(`Nota guardada exitosamente con ID: ${idToUse}`);
       } catch (saveErr) {
         console.error("Error al guardar nota:", saveErr);
+        console.error("Datos que se intentaron guardar:", notaToSave);
         throw saveErr;
       }
     } catch (error) {
+      ErrorHandler.logError('updateNotaAlumno', error, { alumnoId: nota.alumnoId, asignaturaId: nota.asignaturaId });
       console.error("Error general en updateNotaAlumno:", error);
       throw error;
     }
@@ -1313,6 +1337,59 @@ class RealtimeDatabaseManager {
       console.error("Error al obtener notas por asignatura:", error);
       return [];
     }
+  }
+
+  // Verificar conectividad con Firebase
+  async verifyConnectivity(): Promise<boolean> {
+    try {
+      console.log('Verificando conectividad con Firebase...');
+      // Usar un path más simple que no cause problemas de token
+      const testRef = ref(db, 'test');
+      const snapshot = await get(testRef);
+      console.log('Conectividad Firebase verificada correctamente');
+      return true;
+    } catch (error) {
+      console.error('Error al verificar conectividad:', error);
+      return false;
+    }
+  }
+
+  // Verificar permisos básicos
+  async verifyPermissions(): Promise<boolean> {
+    try {
+      console.log('Verificando permisos básicos...');
+      // Intentar leer algo simple para verificar permisos
+      const testRef = ref(db, 'test');
+      await get(testRef);
+      console.log('Permisos de lectura verificados');
+      return true;
+    } catch (error) {
+      console.error('Error de permisos:', error);
+      return false;
+    }
+  }
+
+  // Función auxiliar para limpiar valores undefined de un objeto
+  private cleanUndefinedValues(obj: any): any {
+    if (obj === null || obj === undefined) {
+      return null;
+    }
+    
+    if (Array.isArray(obj)) {
+      return obj.map(item => this.cleanUndefinedValues(item)).filter(item => item !== undefined);
+    }
+    
+    if (typeof obj === 'object') {
+      const cleaned: any = {};
+      for (const [key, value] of Object.entries(obj)) {
+        if (value !== undefined) {
+          cleaned[key] = this.cleanUndefinedValues(value);
+        }
+      }
+      return cleaned;
+    }
+    
+    return obj;
   }
 }
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { dataManager } from '../../utils/dataManager';
+import { ErrorHandler } from '../../utils/errorHandler';
 import type { 
   Alumno, 
   Asignatura, 
@@ -18,12 +19,110 @@ interface NotasFormProps {
   onNotasSaved?: () => void;
 }
 
+// Función para calcular la nota final de una evaluación basada en las pruebas y sus porcentajes
+const calcularNotaEvaluacion = (notaAvaliacion: NotaAvaliacion, avaliacion: Avaliacion): number => {
+  if (!notaAvaliacion?.notasProbas || !avaliacion?.probas) {
+    return 0;
+  }
+
+  let sumaNotasPonderadas = 0;
+  let sumaPorcentajes = 0;
+
+  // Para cada nota de prueba, buscar su configuración correspondiente
+  notaAvaliacion.notasProbas.forEach(notaProba => {
+    const configProba = avaliacion.probas.find(p => p.id === notaProba.probaId);
+    if (configProba && typeof notaProba.valor === 'number' && !isNaN(notaProba.valor)) {
+      sumaNotasPonderadas += notaProba.valor * (configProba.porcentaxe / 100);
+      sumaPorcentajes += configProba.porcentaxe;
+    }
+  });
+
+  // Si no hay porcentajes válidos, devolver 0
+  if (sumaPorcentajes === 0) {
+    return 0;
+  }
+
+  // Ajustar si los porcentajes no suman 100% (normalizar)
+  if (sumaPorcentajes !== 100) {
+    sumaNotasPonderadas = (sumaNotasPonderadas * 100) / sumaPorcentajes;
+  }
+
+  return Math.round(sumaNotasPonderadas * 100) / 100; // Redondear a 2 decimales
+};
+
+// Función para calcular la nota final de la asignatura basada en las evaluaciones y sus porcentajes
+const calcularNotaFinalAsignatura = (notaAlumno: NotaAlumno, asignatura: Asignatura): number => {
+  if (!notaAlumno?.notasAvaliaciois || !asignatura?.configuracionAvaliacion?.avaliaciois) {
+    return 0;
+  }
+
+  let sumaNotasPonderadas = 0;
+  let sumaPorcentajes = 0;
+
+  // Para cada evaluación, calcular su nota y aplicar el porcentaje correspondiente
+  notaAlumno.notasAvaliaciois.forEach(notaEval => {
+    const configEval = asignatura.configuracionAvaliacion!.avaliaciois.find(e => e.id === notaEval.avaliacionId);
+    if (configEval) {
+      const notaEvaluacion = calcularNotaEvaluacion(notaEval, configEval);
+      if (!isNaN(notaEvaluacion)) {
+        sumaNotasPonderadas += notaEvaluacion * (configEval.porcentaxeNota / 100);
+        sumaPorcentajes += configEval.porcentaxeNota;
+      }
+    }
+  });
+
+  // Si no hay porcentajes válidos, devolver 0
+  if (sumaPorcentajes === 0) {
+    return 0;
+  }
+
+  // Ajustar si los porcentajes no suman 100% (normalizar)
+  if (sumaPorcentajes !== 100) {
+    sumaNotasPonderadas = (sumaNotasPonderadas * 100) / sumaPorcentajes;
+  }
+
+  return Math.round(sumaNotasPonderadas * 100) / 100; // Redondear a 2 decimales
+};
+
+// Función para recalcular todas las notas de un alumno
+const recalcularTodasLasNotas = (notaAlumno: NotaAlumno, asignatura: Asignatura): NotaAlumno => {
+  if (!notaAlumno?.notasAvaliaciois || !asignatura?.configuracionAvaliacion?.avaliaciois) {
+    return notaAlumno;
+  }
+
+  const notasActualizadas = { ...notaAlumno };
+  let huboCambios = false;
+
+  // Recalcular la nota de cada evaluación
+  notasActualizadas.notasAvaliaciois = notasActualizadas.notasAvaliaciois.map(notaEval => {
+    const configEval = asignatura.configuracionAvaliacion!.avaliaciois.find(e => e.id === notaEval.avaliacionId);
+    if (configEval) {
+      const notaEvaluacionCalculada = calcularNotaEvaluacion(notaEval, configEval);
+      if (notaEval.notaFinal !== notaEvaluacionCalculada) {
+        huboCambios = true;
+        return { ...notaEval, notaFinal: notaEvaluacionCalculada };
+      }
+    }
+    return notaEval;
+  });
+
+  // Recalcular la nota final de la asignatura
+  const notaFinalCalculada = calcularNotaFinalAsignatura(notasActualizadas, asignatura);
+  if (notasActualizadas.notaFinal !== notaFinalCalculada) {
+    huboCambios = true;
+    notasActualizadas.notaFinal = notaFinalCalculada;
+  }
+
+  return huboCambios ? notasActualizadas : notaAlumno;
+};
+
 const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, onSaved, onNotasSaved }) => {
   const [asignatura, setAsignatura] = useState<Asignatura | null>(null);
   const [notaAlumno, setNotaAlumno] = useState<NotaAlumno | null>(null);
   const [loading, setLoading] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [activeTab, setActiveTab] = useState<string | null>(null);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
 
   useEffect(() => {
     if (!asignaturaId || !alumno) return;
@@ -50,13 +149,23 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
         
         setNotaAlumno(nota);
         
+        // Recalcular todas las notas después de cargar
+        if (nota && asignaturaData?.configuracionAvaliacion) {
+          const notasRecalculadas = recalcularTodasLasNotas(nota, asignaturaData);
+          if (notasRecalculadas !== nota) {
+            setNotaAlumno(notasRecalculadas);
+          }
+        }
+        
         // Establecer la primera evaluación como activa
         if (asignaturaData.configuracionAvaliacion?.avaliaciois.length > 0) {
           setActiveTab(asignaturaData.configuracionAvaliacion.avaliaciois[0].id);
         }
       } catch (error) {
+        ErrorHandler.logError('NotasForm cargarDatos', error, { alumnoId: alumno.id, asignaturaId });
         console.error('Error al cargar datos de notas:', error);
-        alert('Ocorreu un erro ao cargar os datos de notas');
+        const message = error instanceof Error ? error.message : 'Error desconocido';
+        alert(`Ocorreu un erro ao cargar os datos de notas: ${message}`);
         if (onClose) onClose();
       } finally {
         setLoading(false);
@@ -67,7 +176,7 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
   }, [asignaturaId, alumno, onClose]);
 
   const handleNotaChange = (avaliacionId: string, probaId: string, valor: number) => {
-    if (!notaAlumno) return;
+    if (!notaAlumno || !asignatura) return;
     
     const nuevasNotas = { ...notaAlumno };
     
@@ -85,6 +194,17 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
       if (probaIndex !== -1) {
         // Actualizar la nota
         nuevasNotas.notasAvaliaciois[avaliacionIndex].notasProbas[probaIndex].valor = valor;
+        
+        // Recalcular automáticamente la nota de esta evaluación
+        const configEval = asignatura.configuracionAvaliacion?.avaliaciois.find(e => e.id === avaliacionId);
+        if (configEval) {
+          const notaEvaluacionCalculada = calcularNotaEvaluacion(nuevasNotas.notasAvaliaciois[avaliacionIndex], configEval);
+          nuevasNotas.notasAvaliaciois[avaliacionIndex].notaFinal = notaEvaluacionCalculada;
+        }
+        
+        // Recalcular automáticamente la nota final de la asignatura
+        const notaFinalCalculada = calcularNotaFinalAsignatura(nuevasNotas, asignatura);
+        nuevasNotas.notaFinal = notaFinalCalculada;
       }
     }
     
@@ -129,7 +249,7 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
       // Validar que la estructura básica está presente
       if (!notaAlumno.alumnoId || !notaAlumno.asignaturaId) {
         console.error("Error: Faltan datos esenciales (alumnoId o asignaturaId)");
-        alert("Error con los datos de notas. Por favor, recarga la página e inténtalo de nuevo.");
+        alert("Error con los datos de notas. Por favor, recarga la página e inténtalo de novo.");
         setGuardando(false);
         return;
       }
@@ -164,6 +284,23 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
         id: notaCopia.id,
         evaluaciones: notaCopia.notasAvaliaciois?.length || 0
       });
+      
+      // Validar y limpiar datos antes de guardar
+      if (notaCopia.notaFinal === undefined) {
+        delete (notaCopia as any).notaFinal;
+      }
+      
+      // Validar que las evaluaciones están bien formadas
+      if (notaCopia.notasAvaliaciois) {
+        notaCopia.notasAvaliaciois = notaCopia.notasAvaliaciois.map(aval => ({
+          ...aval,
+          notasProbas: aval.notasProbas.map(proba => ({
+            probaId: proba.probaId,
+            valor: proba.valor || 0,
+            observacions: proba.observacions || ''
+          }))
+        }));
+      }
       
       try {
         // Guardar las notas en Firebase directamente - versión simplificada
@@ -205,8 +342,10 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
       if (onSaved) onSaved();
       if (onNotasSaved) onNotasSaved();
     } catch (error) {
+      ErrorHandler.logError('NotasForm guardar', error, { alumnoId: alumno.id, asignaturaId });
       console.error('Error al guardar notas:', error);
-      alert('Ocorreu un erro ao gardar as notas');
+      const message = error instanceof Error ? error.message : 'Error desconocido';
+      alert(`Ocorreu un erro ao gardar as notas: ${message}`);
     } finally {
       setGuardando(false);
     }
@@ -384,21 +523,7 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
     } catch (error) {
       console.error("Error al inicializar estructura de notas:", error);
     }
-  };      // Llamar a la inicialización solo cuando tenemos los datos necesarios
-  useEffect(() => {
-    // Solo inicializar si tenemos los datos necesarios y no estamos cargando
-    if (asignatura && asignatura.configuracionAvaliacion && notaAlumno && !loading) {
-      console.log("Inicializando estructura de notas...");
-      setTimeout(() => {
-        try {
-          inicializarEstructuraNotas();
-        } catch (error) {
-          console.error("Error al inicializar estructura de notas:", error);
-        }
-      }, 100); // Pequeño retraso para asegurar que otros estados se han actualizado
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [asignatura?.id, notaAlumno?.id, loading]);
+  };
   
   // Encontrar las notas de la evaluación activa con protección contra errores
   const activeNotaAvaliacion = notaAlumno && 
@@ -469,20 +594,32 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
       {/* Pestañas de navegación entre evaluaciones */}
       <div className="border-b border-gray-200 mb-6">
         <ul className="flex flex-wrap -mb-px">
-          {asignatura.configuracionAvaliacion.avaliaciois.map((avaliacion) => (
-            <li key={avaliacion.id} className="mr-2">
-              <button
-                onClick={() => setActiveTab(avaliacion.id)}
-                className={`inline-block py-2 px-4 font-medium text-sm rounded-t-lg ${
-                  activeTab === avaliacion.id
-                    ? 'border-b-2 border-blue-600 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                {avaliacion.numero}ª Avaliación
-              </button>
-            </li>
-          ))}
+          {asignatura.configuracionAvaliacion.avaliaciois.map((avaliacion) => {
+            // Buscar la nota de esta evaluación
+            const notaEval = notaAlumno?.notasAvaliaciois?.find(na => na.avaliacionId === avaliacion.id);
+            const notaEvaluacion = notaEval?.notaFinal;
+            
+            return (
+              <li key={avaliacion.id} className="mr-2">
+                <button
+                  onClick={() => setActiveTab(avaliacion.id)}
+                  className={`inline-block py-2 px-4 font-medium text-sm rounded-t-lg ${
+                    activeTab === avaliacion.id
+                      ? 'border-b-2 border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  <div className="flex flex-col items-center">
+                    <span>{avaliacion.numero}ª Avaliación</span>
+                    <span className="text-xs">
+                      {notaEvaluacion !== undefined ? `${notaEvaluacion.toFixed(2)}` : '—'} 
+                      <span className="text-gray-400"> ({avaliacion.porcentaxeNota}%)</span>
+                    </span>
+                  </div>
+                </button>
+              </li>
+            );
+          })}
           <li>
             <button
               onClick={() => setActiveTab('final')}
@@ -492,7 +629,12 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
-              Nota Final
+              <div className="flex flex-col items-center">
+                <span>Resumo Final</span>
+                <span className="text-xs">
+                  {notaAlumno?.notaFinal !== undefined ? `${notaAlumno.notaFinal.toFixed(2)}` : '—'}
+                </span>
+              </div>
             </button>
           </li>
         </ul>
@@ -575,9 +717,48 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
             </h3>
             
             {activeNotaAvaliacion?.notaFinal !== undefined && (
-              <p className="mt-2">
-                <span className="font-medium">Nota da avaliación:</span> {activeNotaAvaliacion.notaFinal.toFixed(2)}
-              </p>
+              <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <span className="font-medium">Nota da avaliación:</span> 
+                  <span className={`ml-2 font-bold text-lg ${
+                    activeNotaAvaliacion.notaFinal >= 9 ? 'text-blue-600' : 
+                    activeNotaAvaliacion.notaFinal >= 7 ? 'text-green-600' : 
+                    activeNotaAvaliacion.notaFinal >= 5 ? 'text-yellow-600' : 
+                    'text-red-600'
+                  }`}>
+                    {activeNotaAvaliacion.notaFinal.toFixed(2)}
+                  </span>
+                </div>
+                <div>
+                  <span className="font-medium">Contribución á nota final:</span>
+                  <span className="ml-2 font-bold text-lg text-purple-600">
+                    {((activeNotaAvaliacion.notaFinal * (activeAvaliacion?.porcentaxeNota || 0)) / 100).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            )}
+            
+            {/* Mostrar cálculo detallado */}
+            {activeAvaliacion?.probas && activeNotaAvaliacion?.notasProbas && (
+              <div className="mt-3 pt-3 border-t border-blue-200">
+                <div className="text-sm text-gray-600">
+                  <span className="font-medium">Cálculo: </span>
+                  {activeAvaliacion.probas.map((proba, index) => {
+                    const notaProba = activeNotaAvaliacion.notasProbas.find(np => np.probaId === proba.id);
+                    const valor = notaProba?.valor || 0;
+                    const contribucion = (valor * proba.porcentaxe) / 100;
+                    return (
+                      <span key={proba.id}>
+                        {index > 0 && ' + '}
+                        <span className="text-gray-800">{valor.toFixed(2)}</span>
+                        <span className="text-gray-500">×{proba.porcentaxe}%</span>
+                        <span className="text-gray-400"> ({contribucion.toFixed(2)})</span>
+                      </span>
+                    );
+                  })}
+                  <span className="ml-2 font-medium">= {activeNotaAvaliacion.notaFinal?.toFixed(2) || '0.00'}</span>
+                </div>
+              </div>
             )}
           </div>
           
@@ -620,32 +801,37 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
                       </td>
                       <td className="px-4 py-3 text-center">{proba.porcentaxe}%</td>
                       <td className="px-4 py-3">
-                        <input
-                          type="number"
-                          inputMode="decimal"
-                          min="0"
-                          max="10"
-                          step="0.01"
-                          value={valor}
-                          onChange={(e) => {
-                            let newValue = e.target.value === '' ? 0 : parseFloat(e.target.value);
-                            // Asegurar que el valor esté entre 0 y 10
-                            newValue = Math.max(0, Math.min(10, newValue));
-                            handleNotaChange(
-                              activeAvaliacion.id, 
-                              proba.id, 
-                              newValue
-                            );
-                          }}
-                          className={`border rounded px-2 py-1 w-20 text-center mx-auto block font-medium ${
-                            valor >= 9 ? 'border-blue-500 bg-blue-50 text-blue-700' : 
-                            valor >= 7 ? 'border-green-500 bg-green-50 text-green-700' : 
-                            valor >= 5 ? 'border-yellow-500 bg-yellow-50 text-yellow-700' : 
-                            'border-red-500 bg-red-50 text-red-700'
-                          }`}
-                          placeholder="0-10"
-                          title="Ingresa una nota entre 0 y 10"
-                        />
+                        <div className="flex flex-col items-center">
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            min="0"
+                            max="10"
+                            step="0.01"
+                            value={valor}
+                            onChange={(e) => {
+                              let newValue = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                              // Asegurar que el valor esté entre 0 y 10
+                              newValue = Math.max(0, Math.min(10, newValue));
+                              handleNotaChange(
+                                activeAvaliacion.id, 
+                                proba.id, 
+                                newValue
+                              );
+                            }}
+                            className={`border rounded px-2 py-1 w-20 text-center font-medium ${
+                              valor >= 9 ? 'border-blue-500 bg-blue-50 text-blue-700' : 
+                              valor >= 7 ? 'border-green-500 bg-green-50 text-green-700' : 
+                              valor >= 5 ? 'border-yellow-500 bg-yellow-50 text-yellow-700' : 
+                              'border-red-500 bg-red-50 text-red-700'
+                            }`}
+                            placeholder="0-10"
+                            title="Ingresa una nota entre 0 y 10"
+                          />
+                          <div className="text-xs text-gray-500 mt-1">
+                            Contribución: {((valor * proba.porcentaxe) / 100).toFixed(2)}
+                          </div>
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         <input
@@ -673,23 +859,72 @@ const NotasForm: React.FC<NotasFormProps> = ({ asignaturaId, alumno, onClose, on
         </div>
       )}
       
-      <div className="flex justify-end mt-6 space-x-3">
+      <div className="flex justify-between items-center mt-6">
+        {/* Botón de diagnóstico */}
         <button
-          onClick={() => onClose?.()}
-          className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
-          disabled={guardando}
+          onClick={() => setShowDiagnostics(!showDiagnostics)}
+          className="px-3 py-1 text-xs bg-gray-200 text-gray-600 rounded hover:bg-gray-300"
+          type="button"
         >
-          Cancelar
+          {showDiagnostics ? 'Ocultar' : 'Mostrar'} diagnósticos
         </button>
         
-        <button
-          onClick={handleSave}
-          disabled={guardando}
-          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-        >
-          {guardando ? 'Gardando...' : 'Gardar todas as notas'}
-        </button>
+        <div className="flex space-x-3">
+          <button
+            onClick={() => onClose?.()}
+            className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
+            disabled={guardando}
+          >
+            Cancelar
+          </button>
+          
+          <button
+            onClick={handleSave}
+            disabled={guardando}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+          >
+            {guardando ? 'Gardando...' : 'Gardar todas as notas'}
+          </button>
+        </div>
       </div>
+      
+      {/* Panel de diagnósticos */}
+      {showDiagnostics && (
+        <div className="mt-4 p-4 bg-gray-50 border rounded-md">
+          <h4 className="font-semibold mb-2">Información de diagnóstico</h4>
+          <div className="text-sm space-y-1">
+            <p><strong>Alumno ID:</strong> {alumno.id}</p>
+            <p><strong>Asignatura ID:</strong> {asignaturaId}</p>
+            <p><strong>Asignatura nome:</strong> {asignatura?.nome || 'No cargada'}</p>
+            <p><strong>Configuración avaliación:</strong> {asignatura?.configuracionAvaliacion ? 'Sí' : 'No'}</p>
+            <p><strong>Evaluaciones configuradas:</strong> {asignatura?.configuracionAvaliacion?.avaliaciois?.length || 0}</p>
+            <p><strong>Nota alumno ID:</strong> {notaAlumno?.id || 'No asignado'}</p>
+            <p><strong>Evaluaciones en nota:</strong> {notaAlumno?.notasAvaliaciois?.length || 0}</p>
+            <p><strong>Tab activo:</strong> {activeTab || 'Ninguno'}</p>
+            <p><strong>URL actual:</strong> {window.location.href}</p>
+          </div>
+          <button
+            onClick={async () => {
+              console.log('=== DIAGNÓSTICO MANUAL ===');
+              console.log('Alumno:', alumno);
+              console.log('Asignatura:', asignatura);
+              console.log('Nota alumno:', notaAlumno);
+              console.log('Active tab:', activeTab);
+              
+              try {
+                console.log('Probando conexión Firebase...');
+                const testNota = await dataManager.getNotaAlumno(alumno.id, asignaturaId);
+                console.log('Nota obtenida desde Firebase:', testNota);
+              } catch (error) {
+                console.error('Error en diagnóstico:', error);
+              }
+            }}
+            className="mt-2 px-3 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600"
+          >
+            Ejecutar diagnóstico en consola
+          </button>
+        </div>
+      )}
     </div>
   );
 };

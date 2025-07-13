@@ -9,6 +9,71 @@ interface NotasAlumnosListProps {
   selectedAlumnoId?: string;
 }
 
+// Función para calcular la nota final de una evaluación basada en las pruebas y sus porcentajes
+const calcularNotaEvaluacion = (notaAvaliacion: NotaAvaliacion, avaliacion: Avaliacion): number => {
+  if (!notaAvaliacion?.notasProbas || !avaliacion?.probas) {
+    return 0;
+  }
+
+  let sumaNotasPonderadas = 0;
+  let sumaPorcentajes = 0;
+
+  // Para cada nota de prueba, buscar su configuración correspondiente
+  notaAvaliacion.notasProbas.forEach(notaProba => {
+    const configProba = avaliacion.probas.find(p => p.id === notaProba.probaId);
+    if (configProba && typeof notaProba.valor === 'number' && !isNaN(notaProba.valor)) {
+      sumaNotasPonderadas += notaProba.valor * (configProba.porcentaxe / 100);
+      sumaPorcentajes += configProba.porcentaxe;
+    }
+  });
+
+  // Si no hay porcentajes válidos, devolver 0
+  if (sumaPorcentajes === 0) {
+    return 0;
+  }
+
+  // Ajustar si los porcentajes no suman 100% (normalizar)
+  if (sumaPorcentajes !== 100) {
+    sumaNotasPonderadas = (sumaNotasPonderadas * 100) / sumaPorcentajes;
+  }
+
+  return Math.round(sumaNotasPonderadas * 100) / 100; // Redondear a 2 decimales
+};
+
+// Función para calcular la nota final de la asignatura basada en las evaluaciones y sus porcentajes
+const calcularNotaFinalAsignatura = (notaAlumno: NotaAlumno, asignatura: Asignatura): number => {
+  if (!notaAlumno?.notasAvaliaciois || !asignatura?.configuracionAvaliacion?.avaliaciois) {
+    return 0;
+  }
+
+  let sumaNotasPonderadas = 0;
+  let sumaPorcentajes = 0;
+
+  // Para cada evaluación, calcular su nota y aplicar el porcentaje correspondiente
+  notaAlumno.notasAvaliaciois.forEach(notaEval => {
+    const configEval = asignatura.configuracionAvaliacion!.avaliaciois.find(e => e.id === notaEval.avaliacionId);
+    if (configEval) {
+      const notaEvaluacion = calcularNotaEvaluacion(notaEval, configEval);
+      if (!isNaN(notaEvaluacion)) {
+        sumaNotasPonderadas += notaEvaluacion * (configEval.porcentaxeNota / 100);
+        sumaPorcentajes += configEval.porcentaxeNota;
+      }
+    }
+  });
+
+  // Si no hay porcentajes válidos, devolver 0
+  if (sumaPorcentajes === 0) {
+    return 0;
+  }
+
+  // Ajustar si los porcentajes no suman 100% (normalizar)
+  if (sumaPorcentajes !== 100) {
+    sumaNotasPonderadas = (sumaNotasPonderadas * 100) / sumaPorcentajes;
+  }
+
+  return Math.round(sumaNotasPonderadas * 100) / 100; // Redondear a 2 decimales
+};
+
 const NotasAlumnosList: React.FC<NotasAlumnosListProps> = ({ 
   asignaturaId, 
   onAlumnoSelected,
@@ -87,52 +152,22 @@ const NotasAlumnosList: React.FC<NotasAlumnosListProps> = ({
     }
   };
 
-  // Función auxiliar para calcular la nota media
+  // Función auxiliar para calcular la nota media usando las funciones de cálculo mejoradas
   const calcularNotaMedia = (alumnoId: string): number | null => {
     try {
       const notaAlumno = notas[alumnoId];
-      if (!notaAlumno || !notaAlumno.notasAvaliaciois || notaAlumno.notasAvaliaciois.length === 0) {
+      if (!notaAlumno || !asignatura) {
         return null;
       }
       
-      // Si ya tiene nota final calculada, usarla
-      if (notaAlumno.notaFinal !== undefined && notaAlumno.notaFinal !== null) {
-        console.log(`Usando nota final existente para alumno ${alumnoId}:`, notaAlumno.notaFinal);
-        return notaAlumno.notaFinal;
-      }
+      // Usar la función de cálculo consistente
+      const notaCalculada = calcularNotaFinalAsignatura(notaAlumno, asignatura);
       
-      console.log(`Calculando nota para alumno ${alumnoId} porque no tiene nota final guardada.`);
-      
-      // Calcular la nota final según los porcentajes de las evaluaciones
-      let notaFinal = 0;
-      let porcentajeTotal = 0;
-      
-      notaAlumno.notasAvaliaciois.forEach((avaliacion: NotaAvaliacion) => {
-        if (typeof avaliacion.notaFinal === 'number') {
-          // Obtener el porcentaje de la evaluación desde la configuración
-          const avalConfig = avaliacionsMap[avaliacion.avaliacionId];
-          if (avalConfig) {
-            const contribucion = avaliacion.notaFinal * avalConfig.porcentaxeNota / 100;
-            notaFinal += contribucion;
-            porcentajeTotal += avalConfig.porcentaxeNota;
-            console.log(`Evaluación ${avalConfig.numero}: Nota ${avaliacion.notaFinal}, porcentaje ${avalConfig.porcentaxeNota}%, contribución: ${contribucion}`);
-          } else {
-            console.warn(`No se encontró configuración para evaluación ${avaliacion.avaliacionId}`);
-          }
-        } else {
-          console.log(`La evaluación ${avaliacion.avaliacionId} no tiene nota final calculada`);
-        }
-      });
-      
-      // Si no hay evaluaciones con notas, devolver null
-      if (porcentajeTotal === 0) {
-        console.log(`No hay evaluaciones con porcentajes para alumno ${alumnoId}`);
+      // Si no se pudo calcular, devolver null
+      if (isNaN(notaCalculada) || notaCalculada === 0) {
         return null;
       }
       
-      // Normalizar por el porcentaje total (por si no suma 100)
-      const notaCalculada = porcentajeTotal > 0 ? notaFinal / (porcentajeTotal / 100) : null;
-      console.log(`Nota final calculada para alumno ${alumnoId}: ${notaCalculada}`);
       return notaCalculada;
     } catch (error) {
       console.error(`Error al calcular nota media para alumno ${alumnoId}:`, error);
@@ -185,28 +220,65 @@ const NotasAlumnosList: React.FC<NotasAlumnosListProps> = ({
         {alumnos.map(alumno => {
           const notaMedia = calcularNotaMedia(alumno.id);
           const bgColor = getBackgroundColor(notaMedia);
+          const notaAlumno = notas[alumno.id];
           
           return (
             <div 
               key={alumno.id}
-              className={`p-2 border rounded-lg cursor-pointer hover:bg-gray-50 ${
+              className={`p-3 border rounded-lg cursor-pointer hover:bg-gray-50 ${
                 bgColor
               } ${
                 selectedAlumnoId === alumno.id ? 'ring-2 ring-blue-500' : ''
               }`}
               onClick={() => onAlumnoSelected(alumno)}
             >
-              <div className="flex justify-between items-center">
-                <div>
+              <div className="flex justify-between items-start">
+                <div className="flex-1">
                   <div className="font-medium">{alumno.nome} {alumno.apelidos}</div>
-                  <div className="text-xs text-gray-500">{alumno.email}</div>
+                  <div className="text-xs text-gray-500 mb-2">{alumno.email}</div>
+                  
+                  {/* Mostrar notas de evaluaciones */}
+                  {notaAlumno && asignatura?.configuracionAvaliacion?.avaliaciois && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {asignatura.configuracionAvaliacion.avaliaciois.map(avaliacion => {
+                        const notaEval = notaAlumno.notasAvaliaciois?.find(na => na.avaliacionId === avaliacion.id);
+                        const notaEvaluacion = notaEval ? calcularNotaEvaluacion(notaEval, avaliacion) : null;
+                        
+                        let colorClass = "bg-gray-100 text-gray-600";
+                        if (notaEvaluacion !== null && notaEvaluacion > 0) {
+                          if (notaEvaluacion >= 9) {
+                            colorClass = "bg-blue-100 text-blue-700";
+                          } else if (notaEvaluacion >= 7) {
+                            colorClass = "bg-green-100 text-green-700";
+                          } else if (notaEvaluacion >= 5) {
+                            colorClass = "bg-yellow-100 text-yellow-700";
+                          } else {
+                            colorClass = "bg-red-100 text-red-700";
+                          }
+                        }
+                        
+                        return (
+                          <span 
+                            key={avaliacion.id}
+                            className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${colorClass}`}
+                          >
+                            {avaliacion.numero}ª: {notaEvaluacion !== null && notaEvaluacion > 0 ? notaEvaluacion.toFixed(1) : '—'}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-                <div className={`
-                  w-10 h-10 rounded-full flex items-center justify-center
-                  ${notaMedia !== null ? (notaMedia >= 5 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800') : 'bg-gray-100 text-gray-500'}
-                  font-bold text-lg
-                `}>
-                  {formatarNota(notaMedia)}
+                
+                <div className="ml-3">
+                  <div className={`
+                    w-12 h-12 rounded-full flex flex-col items-center justify-center
+                    ${notaMedia !== null ? (notaMedia >= 5 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800') : 'bg-gray-100 text-gray-500'}
+                    font-bold text-sm
+                  `}>
+                    <span className="text-lg">{formatarNota(notaMedia)}</span>
+                    <span className="text-xs font-normal">Final</span>
+                  </div>
                 </div>
               </div>
             </div>
