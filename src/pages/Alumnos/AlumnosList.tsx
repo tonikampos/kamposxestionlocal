@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useRealtimeAuth } from '../../firebase/RealtimeAuthContext';
 import { dataManager } from '../../utils/dataManager';
 import type { Alumno } from '../../utils/storageManager';
-import { useNavigate } from 'react-router-dom';
 
 interface AlumnosListProps {
   onEditAlumno: (alumno: Alumno) => void;
@@ -15,7 +14,6 @@ const AlumnosList: React.FC<AlumnosListProps> = ({ onEditAlumno }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [matriculadosMap, setMatriculadosMap] = useState<Record<string, boolean>>({});
-  const navigate = useNavigate();
 
   // Cargar alumnos al montar el componente y cuando cambie el usuario
   useEffect(() => {
@@ -54,14 +52,17 @@ const AlumnosList: React.FC<AlumnosListProps> = ({ onEditAlumno }) => {
         
         if (alumnosFromStorage && alumnosFromStorage.length > 0) {
           for (const alumno of alumnosFromStorage) {
-            console.log('AlumnosList: Verificando matrículas para alumno', alumno.id);
+            console.log('AlumnosList: Verificando matrículas para alumno', alumno.id, alumno.nome);
             const matriculasAlumno = await dataManager.getMatriculasByAlumno(alumno.id);
+            console.log(`AlumnosList: Alumno ${alumno.nome} tiene ${matriculasAlumno.length} matrículas:`, matriculasAlumno);
             matriculados[alumno.id] = matriculasAlumno.length > 0;
+            console.log(`AlumnosList: Estado de ${alumno.nome}: ${matriculados[alumno.id] ? 'Matriculado' : 'No matriculado'}`);
           }
         } else {
           console.log('AlumnosList: No hay alumnos para cargar matrículas');
         }
         
+        console.log('AlumnosList: Estado final de matriculación:', matriculados);
         setMatriculadosMap(matriculados);
       } else {
         console.log('AlumnosList: No hay usuario actual, no se cargan alumnos');
@@ -151,6 +152,14 @@ const AlumnosList: React.FC<AlumnosListProps> = ({ onEditAlumno }) => {
   };
 
   const handleDeleteAlumno = async (id: string) => {
+    // Verificar que el alumno no esté matriculado antes de eliminarlo
+    const estaMatriculado = matriculadosMap[id];
+    
+    if (estaMatriculado) {
+      alert('Non se pode eliminar un alumno que está matriculado en algunha asignatura. Primeiro debe dalo de baixa en todas as asignaturas.');
+      return;
+    }
+    
     if (window.confirm('¿Estás seguro de que queres eliminar este alumno?')) {
       try {
         await dataManager.deleteAlumno(id);
@@ -161,38 +170,6 @@ const AlumnosList: React.FC<AlumnosListProps> = ({ onEditAlumno }) => {
         const errorMessage = error instanceof Error ? error.message : 'Erro ao eliminar o alumno';
         alert(errorMessage);
       }
-    }
-  };
-
-  const irANotas = async (alumno: Alumno) => {
-    // Ya no es necesario verificar si está matriculado aquí porque el botón estará deshabilitado
-    // Sin embargo, mantenemos la verificación por seguridad y actualizamos el estado si es necesario
-    try {
-      // Verificar que el alumno tiene al menos una matrícula activa
-      const matriculas = await dataManager.getMatriculasByAlumno(alumno.id);
-      const estaMatriculado = matriculas.length > 0;
-      
-      // Si hay inconsistencia entre el estado local y el real, actualizar el estado
-      if (matriculadosMap[alumno.id] !== estaMatriculado) {
-        console.log(`Actualizando estado de matriculación para ${alumno.nome}: ${estaMatriculado ? 'Matriculado' : 'No matriculado'}`);
-        const updatedMap = {...matriculadosMap};
-        updatedMap[alumno.id] = estaMatriculado;
-        setMatriculadosMap(updatedMap);
-      }
-      
-      if (!estaMatriculado) {
-        alert('O alumno non está matriculado en ningunha asignatura');
-        return;
-      }
-      
-      // Guardar el alumno en sessionStorage para recuperarlo en la página de notas
-      sessionStorage.setItem('alumnoSeleccionadoId', alumno.id);
-      
-      // Navegar a la página de notas
-      navigate('/notas');
-    } catch (error) {
-      console.error('Error al verificar matrículas del alumno:', error);
-      alert('Ocorreu un erro ao acceder ás notas do alumno');
     }
   };
 
@@ -239,7 +216,7 @@ const AlumnosList: React.FC<AlumnosListProps> = ({ onEditAlumno }) => {
                   <td className="py-3 px-4">
                     {matriculadosMap[alumno.id] ? (
                       <span className="bg-green-100 text-green-800 py-1 px-2 rounded-full text-xs font-medium">
-                        Matriculado
+                        Activo
                       </span>
                     ) : (
                       <span className="bg-red-100 text-red-800 py-1 px-2 rounded-full text-xs font-medium">
@@ -255,27 +232,17 @@ const AlumnosList: React.FC<AlumnosListProps> = ({ onEditAlumno }) => {
                       >
                         Editar
                       </button>
-                      <button 
-                        onClick={() => irANotas(alumno)}
-                        className={`mr-2 ${
-                          matriculadosMap[alumno.id] 
-                            ? "text-green-600 hover:text-green-800" 
-                            : "text-gray-400 cursor-not-allowed"
-                        }`}
-                        disabled={!matriculadosMap[alumno.id]}
-                        title={matriculadosMap[alumno.id] 
-                          ? "Ver notas do alumno" 
-                          : "O alumno non está matriculado en ningunha asignatura"
-                        }
-                      >
-                        Ver notas
-                      </button>
                       
                       <button 
                         onClick={() => handleDeleteAlumno(alumno.id)}
-                        className="text-red-600 hover:text-red-800"
+                        className={`${
+                          matriculadosMap[alumno.id] 
+                            ? "text-gray-400 cursor-not-allowed" 
+                            : "text-red-600 hover:text-red-800"
+                        }`}
+                        disabled={matriculadosMap[alumno.id]}
                         title={matriculadosMap[alumno.id] ? 
-                          "O alumno está matriculado en algunha asignatura, pero podes intentar eliminalo" : 
+                          "Non se pode eliminar un alumno matriculado" : 
                           "Eliminar alumno"}
                       >
                         Eliminar
@@ -317,7 +284,7 @@ const AlumnosList: React.FC<AlumnosListProps> = ({ onEditAlumno }) => {
                   <div>
                     {matriculadosMap[alumno.id] ? (
                       <span className="bg-green-100 text-green-800 py-1 px-2 rounded-full text-xs font-medium">
-                        Matriculado
+                        Activo
                       </span>
                     ) : (
                       <span className="bg-red-100 text-red-800 py-1 px-2 rounded-full text-xs font-medium">
@@ -334,27 +301,17 @@ const AlumnosList: React.FC<AlumnosListProps> = ({ onEditAlumno }) => {
                   >
                     Editar
                   </button>
-                  <button 
-                    onClick={() => irANotas(alumno)}
-                    className={`text-sm py-1 px-2 border rounded ${
-                      matriculadosMap[alumno.id] 
-                        ? "text-green-600 hover:text-green-800 border-green-600" 
-                        : "text-gray-400 border-gray-300 cursor-not-allowed"
-                    }`}
-                    disabled={!matriculadosMap[alumno.id]}
-                    title={matriculadosMap[alumno.id] 
-                      ? "Ver notas do alumno" 
-                      : "O alumno non está matriculado en ningunha asignatura"
-                    }
-                  >
-                    Ver notas
-                  </button>
                   
                   <button 
                     onClick={() => handleDeleteAlumno(alumno.id)}
-                    className="text-red-600 hover:text-red-800 text-sm py-1 px-2 border border-red-600 rounded ml-2"
+                    className={`text-sm py-1 px-2 border rounded ${
+                      matriculadosMap[alumno.id] 
+                        ? "text-gray-400 border-gray-300 cursor-not-allowed" 
+                        : "text-red-600 hover:text-red-800 border-red-600"
+                    }`}
+                    disabled={matriculadosMap[alumno.id]}
                     title={matriculadosMap[alumno.id] ? 
-                      "O alumno está matriculado en algunha asignatura, pero podes intentar eliminalo" : 
+                      "Non se pode eliminar un alumno matriculado" : 
                       "Eliminar alumno"}
                   >
                     Eliminar
@@ -380,7 +337,7 @@ const AlumnosList: React.FC<AlumnosListProps> = ({ onEditAlumno }) => {
         <h3 className="text-sm font-medium text-blue-800 mb-1">Información</h3>
         <ul className="list-disc pl-5 text-sm text-gray-600 space-y-1">
           <li>Os alumnos <span className="bg-red-100 text-red-800 py-0.5 px-1 rounded text-xs">non matriculados</span> poden ser eliminados.</li>
-          <li>Os alumnos matriculados teñen acceso directo ás súas notas.</li>
+          <li>Os alumnos <span className="bg-green-100 text-green-800 py-0.5 px-1 rounded text-xs">activos</span> están matriculados en algunha asignatura e non poden ser eliminados.</li>
           <li>Para matricular un alumno, debe ir á sección de Asignaturas e engadir o alumno á matrícula da asignatura.</li>
         </ul>
       </div>

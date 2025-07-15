@@ -33,16 +33,24 @@ const Home = () => {
           </Link>
           
           <Link 
-            to="/informes" 
-            className="flex flex-col items-center justify-center p-3 md:p-6 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all hover:shadow-lg transform hover:scale-105"
+            to="/estadisticas" 
+            className="flex flex-col items-center justify-center p-3 md:p-6 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all hover:shadow-lg transform hover:scale-105"
           >
             <span className="text-2xl md:text-4xl mb-2 md:mb-3">📊</span>
+            <span className="text-sm md:text-xl font-medium">ESTADÍSTICAS</span>
+          </Link>
+          
+          <Link 
+            to="/informes" 
+            className="flex flex-col items-center justify-center p-3 md:p-6 bg-purple-600 text-white rounded-xl hover:bg-purple-700 transition-all hover:shadow-lg transform hover:scale-105"
+          >
+            <span className="text-2xl md:text-4xl mb-2 md:mb-3">�</span>
             <span className="text-sm md:text-xl font-medium">Informes</span>
           </Link>
           
           <Link 
             to="/copias" 
-            className="flex flex-col items-center justify-center p-3 md:p-6 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all hover:shadow-lg transform hover:scale-105"
+            className="flex flex-col items-center justify-center p-3 md:p-6 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all hover:shadow-lg transform hover:scale-105"
           >
             <span className="text-2xl md:text-4xl mb-2 md:mb-3">💾</span>
             <span className="text-sm md:text-xl font-medium">Copias</span>

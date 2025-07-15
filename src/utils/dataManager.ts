@@ -176,6 +176,72 @@ class DataManager {
     return this.getAlumnosByAsignatura(asignaturaId);
   }
 
+  // MÉTODOS PARA COPIA DE SEGURIDAD TOTAL Y GESTIÓN MASIVA DE DATOS
+
+  async getAllProfesores(): Promise<Profesor[]> {
+    return realtimeDatabaseManager.getProfesores();
+  }
+
+  async getAllAlumnos(): Promise<Alumno[]> {
+    return realtimeDatabaseManager.getAllAlumnos();
+  }
+
+  async getAllAsignaturas(): Promise<Asignatura[]> {
+    return realtimeDatabaseManager.getAllAsignaturas();
+  }
+
+  async getAllMatriculas(): Promise<Matricula[]> {
+    return realtimeDatabaseManager.getAllMatriculas();
+  }
+
+  async getAllNotas(): Promise<NotaAlumno[]> {
+    return realtimeDatabaseManager.getAllNotas();
+  }
+
+  async restoreAllData(data: {
+    profesores: Profesor[];
+    alumnos: Alumno[];
+    asignaturas: Asignatura[];
+    matriculas: Matricula[];
+    notas: NotaAlumno[];
+  }): Promise<void> {
+    return realtimeDatabaseManager.restoreAllData(data);
+  }
+
+  async clearAllData(): Promise<void> {
+    return realtimeDatabaseManager.clearAllData();
+  }
+
+  async clearAlumnosYNotas(): Promise<void> {
+    return realtimeDatabaseManager.clearAlumnosYNotas();
+  }
+
+  async createFullDatabaseBackup(): Promise<{
+    profesores: Record<string, any>;
+    alumnos: Record<string, any>;
+    asignaturas: Record<string, any>;
+    matriculas: Record<string, any>;
+    notas: Record<string, any>;
+    metadata: {
+      timestamp: string;
+      version: string;
+      firebaseUrl: string;
+    };
+  }> {
+    return realtimeDatabaseManager.createFullDatabaseBackup();
+  }
+
+  async restoreFullDatabaseBackup(backupData: {
+    profesores: Record<string, any>;
+    alumnos: Record<string, any>;
+    asignaturas: Record<string, any>;
+    matriculas: Record<string, any>;
+    notas: Record<string, any>;
+    metadata?: any;
+  }): Promise<void> {
+    return realtimeDatabaseManager.restoreFullDatabaseBackup(backupData);
+  }
+
   // Función para limpiar notas duplicadas
 
 }

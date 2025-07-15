@@ -182,21 +182,57 @@ const MatriculasAsignatura: React.FC = () => {
     try {
       if (!id) return;
 
-      if (window.confirm('¿Está seguro de que quere eliminar a matrícula deste alumno? Tamén se eliminarán todas as notas do alumno nesta asignatura.')) {
+      // Buscar el alumno en la lista de matriculados
+      const alumnoDesmatriculado = alumnosMatriculados.find(a => a.id === alumnoId);
+      if (!alumnoDesmatriculado) {
+        alert('Non se atopou o alumno na lista de matriculados');
+        return;
+      }
+
+      // Verificar si el alumno tiene notas en esta asignatura
+      const notasAlumno = await dataManager.getNotaAlumno(alumnoId, id);
+      
+      let mensajeConfirmacion = `¿Está seguro de que quere eliminar a matrícula de ${alumnoDesmatriculado.nome} ${alumnoDesmatriculado.apelidos}?`;
+      let mensajeExito = `Alumno ${alumnoDesmatriculado.nome} ${alumnoDesmatriculado.apelidos} desmatriculado con éxito.`;
+      
+      if (notasAlumno && (notasAlumno.notasAvaliaciois?.length > 0 || notasAlumno.notaFinal !== undefined)) {
+        // El alumno tiene notas, informar al usuario
+        let detalleNotas = '';
+        
+        if (notasAlumno.notasAvaliaciois && notasAlumno.notasAvaliaciois.length > 0) {
+          const numEvaluaciones = notasAlumno.notasAvaliaciois.length;
+          const totalPruebas = notasAlumno.notasAvaliaciois.reduce((total, evaluacion) => {
+            return total + (evaluacion.notasProbas?.length || 0);
+          }, 0);
+          
+          detalleNotas = `\n\n⚠️ ATENCIÓN: O alumno ten ${numEvaluaciones} ${numEvaluaciones === 1 ? 'avaliación' : 'avaliacións'} con ${totalPruebas} ${totalPruebas === 1 ? 'proba' : 'probas'} rexistradas`;
+          
+          if (notasAlumno.notaFinal !== undefined) {
+            detalleNotas += ` e unha nota final de ${notasAlumno.notaFinal.toFixed(2)}`;
+          }
+          
+          detalleNotas += '.\n\nTODAS ESTAS NOTAS SERÁN ELIMINADAS PERMANENTEMENTE.';
+        }
+        
+        mensajeConfirmacion = `¿Está seguro de que quere eliminar a matrícula de ${alumnoDesmatriculado.nome} ${alumnoDesmatriculado.apelidos}?${detalleNotas}\n\n¿Desexa continuar con a eliminación?`;
+        mensajeExito = `Alumno ${alumnoDesmatriculado.nome} ${alumnoDesmatriculado.apelidos} desmatriculado con éxito. Tamén se eliminaron todas as notas asociadas.`;
+      }
+
+      if (window.confirm(mensajeConfirmacion)) {
+        // Eliminar la matrícula
         await dataManager.eliminarMatricula(alumnoId, id);
         
-        // Eliminar también las notas asociadas
-        await dataManager.eliminarNotasAlumnoAsignatura(alumnoId, id);
+        // Eliminar también las notas asociadas si las hay
+        if (notasAlumno) {
+          await dataManager.eliminarNotasAlumnoAsignatura(alumnoId, id);
+        }
         
         // Actualizar listas
-        const alumnoDesmatriculado = alumnosMatriculados.find(a => a.id === alumnoId);
-        if (alumnoDesmatriculado) {
-          setAlumnosDisponibles(prev => [...prev, alumnoDesmatriculado]);
-          setAlumnosMatriculados(prev => prev.filter(a => a.id !== alumnoId));
-          
-          // Mostrar mensaje de éxito
-          alert(`Alumno ${alumnoDesmatriculado.nome} ${alumnoDesmatriculado.apelidos} desmatriculado con éxito. Tamén se eliminaron as notas asociadas.`);
-        }
+        setAlumnosDisponibles(prev => [...prev, alumnoDesmatriculado]);
+        setAlumnosMatriculados(prev => prev.filter(a => a.id !== alumnoId));
+        
+        // Mostrar mensaje de éxito
+        alert(mensajeExito);
       }
     } catch (error) {
       console.error('Error al eliminar matrícula:', error);

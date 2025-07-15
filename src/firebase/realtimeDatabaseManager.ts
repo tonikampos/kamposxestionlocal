@@ -797,20 +797,42 @@ class RealtimeDatabaseManager {
   async getMatriculasByAlumno(alumnoId: string): Promise<Matricula[]> {
     try {
       const matriculasRef = ref(db, "matriculas");
-      const matriculasPorAlumnoQuery = query(matriculasRef, orderByChild("alumnoId"), equalTo(alumnoId));
-      const snapshot = await get(matriculasPorAlumnoQuery);
       
-      if (!snapshot.exists()) {
-        return [];
+      // Intentar primero con índice (si está disponible)
+      try {
+        const matriculasPorAlumnoQuery = query(matriculasRef, orderByChild("alumnoId"), equalTo(alumnoId));
+        const snapshot = await get(matriculasPorAlumnoQuery);
+        
+        if (!snapshot.exists()) {
+          return [];
+        }
+        
+        const matriculasData = snapshot.val();
+        
+        // Convertir objeto a array
+        return Object.keys(matriculasData).map(key => ({
+          ...matriculasData[key],
+          id: key
+        }));
+      } catch (indexError) {
+        console.warn("Índice no disponible, usando filtrado manual:", indexError);
+        
+        // Fallback: obtener todas las matrículas y filtrar manualmente
+        const snapshot = await get(matriculasRef);
+        
+        if (!snapshot.exists()) {
+          return [];
+        }
+        
+        const matriculasData = snapshot.val();
+        const todasMatriculas = Object.keys(matriculasData).map(key => ({
+          ...matriculasData[key],
+          id: key
+        }));
+        
+        // Filtrar por alumnoId
+        return todasMatriculas.filter(matricula => matricula.alumnoId === alumnoId);
       }
-      
-      const matriculasData = snapshot.val();
-      
-      // Convertir objeto a array
-      return Object.keys(matriculasData).map(key => ({
-        ...matriculasData[key],
-        id: key
-      }));
     } catch (error) {
       console.error("Error al obtener matrículas por alumno:", error);
       return [];
@@ -1227,7 +1249,7 @@ class RealtimeDatabaseManager {
         // Actualizar el mapa con el ID usado
         this.lastSavedNotaIdMap[mapKey] = idToUse;
         
-        console.log(`Nota guardada exitosamente con ID: ${idToUse}`);
+        console.log(`Nota guardada exitosamente with ID: ${idToUse}`);
       } catch (saveErr) {
         console.error("Error al guardar nota:", saveErr);
         console.error("Datos que se intentaron guardar:", notaToSave);
@@ -1391,6 +1413,343 @@ class RealtimeDatabaseManager {
     
     return obj;
   }
+
+  // MÉTODOS PARA COPIA DE SEGURIDAD TOTAL Y GESTIÓN MASIVA DE DATOS
+
+  // Crear una copia completa de TODAS las tablas de Firebase
+  async createFullDatabaseBackup(): Promise<{
+    profesores: Record<string, any>;
+    alumnos: Record<string, any>;
+    asignaturas: Record<string, any>;
+    matriculas: Record<string, any>;
+    notas: Record<string, any>;
+    metadata: {
+      timestamp: string;
+      version: string;
+      firebaseUrl: string;
+    };
+  }> {
+    try {
+      console.log("realtimeDatabaseManager: creando copia completa de la base de datos");
+      
+      // Obtener TODAS las tablas directamente de Firebase
+      const [profesoresSnapshot, alumnosSnapshot, asignaturasSnapshot, matriculasSnapshot, notasSnapshot] = await Promise.all([
+        get(ref(db, "profesores")),
+        get(ref(db, "alumnos")),
+        get(ref(db, "asignaturas")),
+        get(ref(db, "matriculas")),
+        get(ref(db, "notas"))
+      ]);
+
+      const backupData = {
+        profesores: profesoresSnapshot.exists() ? profesoresSnapshot.val() : {},
+        alumnos: alumnosSnapshot.exists() ? alumnosSnapshot.val() : {},
+        asignaturas: asignaturasSnapshot.exists() ? asignaturasSnapshot.val() : {},
+        matriculas: matriculasSnapshot.exists() ? matriculasSnapshot.val() : {},
+        notas: notasSnapshot.exists() ? notasSnapshot.val() : {},
+        metadata: {
+          timestamp: new Date().toISOString(),
+          version: "3.0",
+          firebaseUrl: db.app.options.databaseURL || "unknown"
+        }
+      };
+
+      // Contar elementos para logging
+      const counts = {
+        profesores: Object.keys(backupData.profesores).length,
+        alumnos: Object.keys(backupData.alumnos).length,
+        asignaturas: Object.keys(backupData.asignaturas).length,
+        matriculas: Object.keys(backupData.matriculas).length,
+        notas: Object.keys(backupData.notas).length
+      };
+
+      console.log("realtimeDatabaseManager: backup completo creado", counts);
+      return backupData;
+    } catch (error) {
+      console.error("Error al crear backup completo de la base de datos:", error);
+      throw error;
+    }
+  }
+
+  // Restaurar COMPLETAMENTE la base de datos desde un backup
+  async restoreFullDatabaseBackup(backupData: {
+    profesores: Record<string, any>;
+    alumnos: Record<string, any>;
+    asignaturas: Record<string, any>;
+    matriculas: Record<string, any>;
+    notas: Record<string, any>;
+    metadata?: any;
+  }): Promise<void> {
+    try {
+      console.log("realtimeDatabaseManager: iniciando restauración completa de la base de datos");
+      
+      // PASO 1: Eliminar TODOS los datos existentes
+      console.log("realtimeDatabaseManager: eliminando todos los datos existentes");
+      await Promise.all([
+        remove(ref(db, "profesores")),
+        remove(ref(db, "alumnos")),
+        remove(ref(db, "asignaturas")),
+        remove(ref(db, "matriculas")),
+        remove(ref(db, "notas"))
+      ]);
+
+      // PASO 2: Restaurar TODAS las tablas
+      console.log("realtimeDatabaseManager: restaurando todas las tablas");
+      const restorePromises = [];
+
+      // Restaurar profesores
+      if (backupData.profesores && Object.keys(backupData.profesores).length > 0) {
+        restorePromises.push(set(ref(db, "profesores"), backupData.profesores));
+      }
+
+      // Restaurar alumnos
+      if (backupData.alumnos && Object.keys(backupData.alumnos).length > 0) {
+        restorePromises.push(set(ref(db, "alumnos"), backupData.alumnos));
+      }
+
+      // Restaurar asignaturas
+      if (backupData.asignaturas && Object.keys(backupData.asignaturas).length > 0) {
+        restorePromises.push(set(ref(db, "asignaturas"), backupData.asignaturas));
+      }
+
+      // Restaurar matrículas
+      if (backupData.matriculas && Object.keys(backupData.matriculas).length > 0) {
+        restorePromises.push(set(ref(db, "matriculas"), backupData.matriculas));
+      }
+
+      // Restaurar notas
+      if (backupData.notas && Object.keys(backupData.notas).length > 0) {
+        restorePromises.push(set(ref(db, "notas"), backupData.notas));
+      }
+
+      // Ejecutar todas las restauraciones en paralelo
+      await Promise.all(restorePromises);
+
+      // PASO 3: Limpiar mapas internos
+      this.lastSavedNotaIdMap = {};
+
+      // Contar elementos restaurados
+      const counts = {
+        profesores: Object.keys(backupData.profesores || {}).length,
+        alumnos: Object.keys(backupData.alumnos || {}).length,
+        asignaturas: Object.keys(backupData.asignaturas || {}).length,
+        matriculas: Object.keys(backupData.matriculas || {}).length,
+        notas: Object.keys(backupData.notas || {}).length
+      };
+
+      console.log("realtimeDatabaseManager: restauración completa finalizada", counts);
+    } catch (error) {
+      console.error("Error al restaurar backup completo:", error);
+      throw error;
+    }
+  }
+
+  // Obtener todos los alumnos de la base de datos (sin filtrar por profesor)
+  async getAllAlumnos(): Promise<Alumno[]> {
+    try {
+      console.log("realtimeDatabaseManager: obteniendo todos los alumnos");
+      const alumnosRef = ref(db, "alumnos");
+      const snapshot = await get(alumnosRef);
+      
+      if (!snapshot.exists()) {
+        return [];
+      }
+      
+      const alumnosData = snapshot.val();
+      return Object.keys(alumnosData).map(key => ({
+        id: key,
+        ...alumnosData[key]
+      }));
+    } catch (error) {
+      console.error("Error al obtener todos los alumnos:", error);
+      throw error;
+    }
+  }
+
+  // Obtener todas las asignaturas de la base de datos (sin filtrar por profesor)
+  async getAllAsignaturas(): Promise<Asignatura[]> {
+    try {
+      console.log("realtimeDatabaseManager: obteniendo todas las asignaturas");
+      const asignaturasRef = ref(db, "asignaturas");
+      const snapshot = await get(asignaturasRef);
+      
+      if (!snapshot.exists()) {
+        return [];
+      }
+      
+      const asignaturasData = snapshot.val();
+      return Object.keys(asignaturasData).map(key => ({
+        id: key,
+        ...asignaturasData[key]
+      }));
+    } catch (error) {
+      console.error("Error al obtener todas las asignaturas:", error);
+      throw error;
+    }
+  }
+
+  // Obtener todas las matrículas de la base de datos
+  async getAllMatriculas(): Promise<Matricula[]> {
+    try {
+      console.log("realtimeDatabaseManager: obteniendo todas las matrículas");
+      const matriculasRef = ref(db, "matriculas");
+      const snapshot = await get(matriculasRef);
+      
+      if (!snapshot.exists()) {
+        return [];
+      }
+      
+      const matriculasData = snapshot.val();
+      return Object.keys(matriculasData).map(key => ({
+        id: key,
+        ...matriculasData[key]
+      }));
+    } catch (error) {
+      console.error("Error al obtener todas las matrículas:", error);
+      throw error;
+    }
+  }
+
+  // Obtener todas las notas de la base de datos
+  async getAllNotas(): Promise<NotaAlumno[]> {
+    try {
+      console.log("realtimeDatabaseManager: obteniendo todas las notas");
+      return this.getNotas(); // Ya tenemos este método implementado
+    } catch (error) {
+      console.error("Error al obtener todas las notas:", error);
+      throw error;
+    }
+  }
+
+  // Método legacy para compatibilidad hacia atrás
+  async restoreAllData(data: {
+    profesores: Profesor[];
+    alumnos: Alumno[];
+    asignaturas: Asignatura[];
+    matriculas: Matricula[];
+    notas: NotaAlumno[];
+  }): Promise<void> {
+    try {
+      console.log("realtimeDatabaseManager: usando método legacy de restauración");
+      
+      // Convertir arrays a objetos para usar el nuevo método
+      const backupData = {
+        profesores: {} as Record<string, any>,
+        alumnos: {} as Record<string, any>,
+        asignaturas: {} as Record<string, any>,
+        matriculas: {} as Record<string, any>,
+        notas: {} as Record<string, any>
+      };
+
+      // Convertir profesores
+      data.profesores?.forEach(profesor => {
+        backupData.profesores[profesor.id] = {
+          nome: profesor.nome,
+          apelidos: profesor.apelidos,
+          email: profesor.email,
+          telefono: profesor.telefono,
+          contrasinal: profesor.contrasinal,
+          activo: profesor.activo
+        };
+      });
+
+      // Convertir alumnos
+      data.alumnos?.forEach(alumno => {
+        backupData.alumnos[alumno.id] = {
+          nome: alumno.nome,
+          apelidos: alumno.apelidos,
+          email: alumno.email,
+          telefono: alumno.telefono,
+          profesorId: alumno.profesorId,
+          createdAt: alumno.createdAt,
+          updatedAt: alumno.updatedAt
+        };
+      });
+
+      // Convertir asignaturas
+      data.asignaturas?.forEach(asignatura => {
+        backupData.asignaturas[asignatura.id] = {
+          nome: asignatura.nome,
+          nivel: asignatura.nivel,
+          curso: asignatura.curso,
+          sesionsSemanais: asignatura.sesionsSemanais,
+          numeroAvaliaciois: asignatura.numeroAvaliaciois,
+          profesorId: asignatura.profesorId,
+          configuracionAvaliacion: asignatura.configuracionAvaliacion,
+          createdAt: asignatura.createdAt,
+          updatedAt: asignatura.updatedAt
+        };
+      });
+
+      // Convertir matrículas
+      data.matriculas?.forEach(matricula => {
+        backupData.matriculas[matricula.id] = {
+          alumnoId: matricula.alumnoId,
+          asignaturaId: matricula.asignaturaId,
+          createdAt: matricula.createdAt
+        };
+      });
+
+      // Convertir notas
+      data.notas?.forEach(nota => {
+        backupData.notas[nota.id] = {
+          alumnoId: nota.alumnoId,
+          asignaturaId: nota.asignaturaId,
+          notasAvaliaciois: nota.notasAvaliaciois,
+          notaFinal: nota.notaFinal,
+          createdAt: nota.createdAt,
+          updatedAt: nota.updatedAt
+        };
+      });
+
+      // Usar el nuevo método de restauración
+      await this.restoreFullDatabaseBackup(backupData);
+    } catch (error) {
+      console.error("Error en el método legacy de restauración:", error);
+      throw error;
+    }
+  }
+
+  // Limpiar todos los datos de la base de datos
+  async clearAllData(): Promise<void> {
+    try {
+      console.log("realtimeDatabaseManager: limpiando todos los datos");
+      
+      // Eliminar todas las colecciones
+      await remove(ref(db, "alumnos"));
+      await remove(ref(db, "asignaturas"));
+      await remove(ref(db, "matriculas"));
+      await remove(ref(db, "notas"));
+      // No eliminamos profesores ya que son los usuarios del sistema
+      
+      console.log("realtimeDatabaseManager: todos los datos eliminados");
+    } catch (error) {
+      console.error("Error al limpiar todos los datos:", error);
+      throw error;
+    }
+  }
+
+  // Eliminar solo alumnos y notas (para inicializar nuevo curso)
+  async clearAlumnosYNotas(): Promise<void> {
+    try {
+      console.log("realtimeDatabaseManager: eliminando alumnos y notas para nuevo curso");
+      
+      // Eliminar alumnos, matrículas y notas
+      await remove(ref(db, "alumnos"));
+      await remove(ref(db, "matriculas"));
+      await remove(ref(db, "notas"));
+      
+      // Limpiar el mapa de notas guardadas
+      this.lastSavedNotaIdMap = {};
+      
+      console.log("realtimeDatabaseManager: alumnos y notas eliminados para nuevo curso");
+    } catch (error) {
+      console.error("Error al eliminar alumnos y notas:", error);
+      throw error;
+    }
+  }
+
+  // ...existing code...
 }
 
 export const realtimeDatabaseManager = new RealtimeDatabaseManager();

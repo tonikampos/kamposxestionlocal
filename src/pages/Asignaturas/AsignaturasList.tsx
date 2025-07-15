@@ -49,6 +49,20 @@ const AsignaturasList = () => {
   };
 
   const handleDelete = async (id: string) => {
+    // Verificar si hay alumnos matriculados en esta asignatura
+    const numeroMatriculados = asignaturasConMatriculas[id] || 0;
+    
+    if (numeroMatriculados > 0) {
+      const asignatura = asignaturas.find(a => a.id === id);
+      const nombreAsignatura = asignatura?.nome || 'esta asignatura';
+      
+      setErrorMessage(
+        `Non se pode eliminar a asignatura "${nombreAsignatura}" porque ten ${numeroMatriculados} ${numeroMatriculados === 1 ? 'alumno matriculado' : 'alumnos matriculados'}. ` +
+        'Debe desmatricular primeiro a todos os alumnos antes de eliminar a asignatura.'
+      );
+      return;
+    }
+    
     if (window.confirm('¿Está seguro de que quere eliminar esta asignatura?')) {
       try {
         await dataManager.deleteAsignatura(id);
@@ -200,9 +214,14 @@ const AsignaturasList = () => {
                     </button>
                     <button
                       onClick={() => handleDelete(asignatura.id)}
-                      className="text-red-600 hover:text-red-800"
+                      className={`${
+                        asignaturasConMatriculas[asignatura.id] > 0
+                          ? "text-gray-400 cursor-not-allowed" 
+                          : "text-red-600 hover:text-red-800"
+                      }`}
+                      disabled={asignaturasConMatriculas[asignatura.id] > 0}
                       title={asignaturasConMatriculas[asignatura.id] > 0 
-                        ? `Non se pode eliminar: ten ${asignaturasConMatriculas[asignatura.id]} alumnos matriculados` 
+                        ? `Non se pode eliminar: ten ${asignaturasConMatriculas[asignatura.id]} alumnos matriculados. Desmatricule primeiro os alumnos.` 
                         : "Eliminar asignatura"}
                     >
                       Eliminar
@@ -212,6 +231,18 @@ const AsignaturasList = () => {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+      
+      {/* Información sobre reglas de eliminación */}
+      {asignaturas.length > 0 && (
+        <div className="mt-6 p-4 bg-yellow-50 border-l-4 border-yellow-400 rounded">
+          <h3 className="text-sm font-medium text-yellow-800 mb-1">Información importante</h3>
+          <ul className="list-disc pl-5 text-sm text-yellow-700 space-y-1">
+            <li>Non se poden eliminar asignaturas que teñan alumnos matriculados.</li>
+            <li>Para eliminar unha asignatura, primeiro debe ir a "Matricular" e desmatricular todos os alumnos.</li>
+            <li>Os botones de "Eliminar" aparecen deshabilitados para asignaturas con alumnos matriculados.</li>
+          </ul>
         </div>
       )}
     </div>
